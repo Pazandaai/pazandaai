@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Crown, Heart, Settings, ShoppingBag } from "lucide-react";
 
 import { useApp } from "../context/AppContext";
@@ -13,34 +14,48 @@ export default function ProfilePage() {
     user,
   } = useApp();
 
-  const { isAdmin, isPremium } = useSession();
+  const { session, isAdmin, isPremium } = useSession();
 
-  const showAdminButton = isAdmin || user.id === 8544023815;
+  const currentUser = useMemo(() => {
+    if (session?.user && session.user.id !== 0) {
+      return {
+        id: session.user.id,
+        firstName: session.user.first_name || user.firstName,
+        lastName: session.user.last_name || user.lastName,
+        username: session.user.username || user.username,
+        photoUrl: user.photoUrl,
+        isPremium: Boolean(session.user.is_premium),
+      };
+    }
+    return user;
+  }, [session?.user, user]);
+
+  const showAdminButton = isAdmin || currentUser.id === 8544023815;
 
   return (
     <div className="space-y-4">
       <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-4">
-          {user.photoUrl ? (
+          {currentUser.photoUrl ? (
             <img
-              src={user.photoUrl}
-              alt={user.firstName}
+              src={currentUser.photoUrl}
+              alt={currentUser.firstName}
               className="h-16 w-16 rounded-full object-cover ring-2 ring-[#DB2777]/20"
             />
           ) : (
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-pink-500 to-rose-400 font-display text-2xl font-extrabold text-white">
-              {user.firstName[0]}
+              {currentUser.firstName[0]}
             </div>
           )}
 
           <div>
             <h2 className="font-display text-lg font-bold text-slate-900">
-              {user.firstName} {user.lastName ?? ""}
+              {currentUser.firstName} {currentUser.lastName ?? ""}
             </h2>
 
-            {user.username ? (
+            {currentUser.username ? (
               <p className="text-xs font-semibold text-slate-400">
-                @{user.username}
+                @{currentUser.username}
               </p>
             ) : null}
 

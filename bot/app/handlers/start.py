@@ -1,3 +1,4 @@
+import logging
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
@@ -14,42 +15,51 @@ router = Router()
 
 @router.message(CommandStart())
 async def start(message: Message) -> None:
-    user = await ensure_user(message.from_user)
+    try:
+        user = await ensure_user(message.from_user)
+        language = (user.get("language") if isinstance(user, dict) else None) or "latn"
 
-    language = user.get("language")
-
-    if not language:
         await message.answer(
-            t("latn", "choose_language"),
-            reply_markup=language_kb(),
+            t(language, "main_menu"),
+            reply_markup=main_menu_kb(language, settings.WEBAPP_URL),
         )
-        return
-
-    await message.answer(
-        t(language, "main_menu"),
-        reply_markup=main_menu_kb(language, settings.WEBAPP_URL),
-    )
+    except Exception as e:
+        logging.error(f"Start command error: {e}")
+        try:
+            await message.answer(
+                "Xush kelibsiz! Pazanda AI botiga xush kelibsiz.",
+                reply_markup=main_menu_kb("latn", settings.WEBAPP_URL),
+            )
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data.in_(["lang:latn", "lang:kyr"]))
 async def choose_language(callback: CallbackQuery) -> None:
-    language = callback.data.split(":")[1]
+    try:
+        language = callback.data.split(":")[1]
 
-    await ensure_user(callback.from_user)
-    await db.set_language(callback.from_user.id, language)
-
-    text = f"{t(language, 'language_set')}\n\n{t(language, 'main_menu')}"
-
-    if callback.message:
+        await ensure_user(callback.from_user)
         try:
-            await callback.message.edit_text(
-                text=text,
-                reply_markup=main_menu_kb(language, settings.WEBAPP_URL),
-            )
-        except Exception:
-            await callback.message.answer(
-                text=text,
-                reply_markup=main_menu_kb(language, settings.WEBAPP_URL),
-            )
+            await db.set_language(callback.from_user.id, language)
+        except Exception as e:
+            logging.warning(f"set_language error: {e}")
 
-    await callback.answer()
+        text = f"{t(language, 'language_set')}\n\n{t(language, 'main_menu')}"
+
+        if callback.message:
+            try:
+                await callback.message.edit_text(
+                    text=text,
+                    reply_markup=main_menu_kb(language, settings.WEBAPP_URL),
+                )
+            except Exception:
+                await callback.message.answer(
+                    text=text,
+                    reply_markup=main_menu_kb(language, settings.WEBAPP_URL),
+                )
+
+        await callback.answer()
+    except Exception as e:
+        logging.error(f"choose_language error: {e}")
+        await callback.answer()

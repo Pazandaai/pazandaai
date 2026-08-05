@@ -128,7 +128,7 @@ function saveJSON(key: string, value: unknown): void {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [user] = useState<AppUser>(getInitialUser);
+  const [user, setUser] = useState<AppUser>(getInitialUser);
   const [script, setScriptState] = useState<Script>(getInitialScript);
   const [activeTab, setActiveTabState] = useState<TabId>("home");
   const [isReady, setIsReady] = useState(false);
@@ -152,6 +152,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setIsReady(true);
+    const tgUser = getTelegramUser();
+    if (tgUser) {
+      setUser({
+        id: tgUser.id,
+        firstName: tgUser.first_name,
+        lastName: tgUser.last_name,
+        username: tgUser.username,
+        photoUrl: (tgUser as any).photo_url,
+        languageCode: tgUser.language_code,
+        isPremium: false,
+      });
+    }
   }, []);
 
   useEffect(() => {
