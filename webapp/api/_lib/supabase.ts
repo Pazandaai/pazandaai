@@ -1,5 +1,5 @@
-import { requireEnv } from "./env";
-import type { TelegramUser } from "./telegram";
+import { requireEnv } from "./env.js";
+import type { TelegramUser } from "./telegram.js";
 
 export async function supabaseFetch(
   method: string,

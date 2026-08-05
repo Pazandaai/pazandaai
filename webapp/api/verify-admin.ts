@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { requireEnv } from "./_lib/env";
-import { supabaseFetch, ensureUser } from "./_lib/supabase";
-import { isAdminUser, verifyInitData } from "./_lib/telegram";
+import { requireEnv } from "./_lib/env.js";
+import { supabaseFetch, ensureUser } from "./_lib/supabase.js";
+import { isAdminUser, verifyInitData } from "./_lib/telegram.js";
 
 export default async function handler(
   req: VercelRequest,
