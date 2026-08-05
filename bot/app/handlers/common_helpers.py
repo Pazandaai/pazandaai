@@ -1,3 +1,4 @@
+import logging
 from aiogram.types import CallbackQuery, Message, User
 
 from app.config import get_settings
@@ -11,19 +12,32 @@ def is_admin(user_id: int) -> bool:
 
 
 async def get_lang(user_id: int) -> str:
-    user = await db.get_user(user_id)
-    if not user:
+    try:
+        user = await db.get_user(user_id)
+        if not user:
+            return "latn"
+        return user.get("language", "latn")
+    except Exception as e:
+        logging.warning(f"get_lang fallback error: {e}")
         return "latn"
-    return user.get("language", "latn")
 
 
 async def ensure_user(tg_user: User) -> dict:
-    return await db.sync_user(
-        telegram_id=tg_user.id,
-        first_name=tg_user.first_name,
-        last_name=tg_user.last_name,
-        username=tg_user.username,
-    )
+    try:
+        return await db.sync_user(
+            telegram_id=tg_user.id,
+            first_name=tg_user.first_name,
+            last_name=tg_user.last_name,
+            username=tg_user.username,
+        )
+    except Exception as e:
+        logging.error(f"ensure_user fallback error: {e}")
+        return {
+            "telegram_id": tg_user.id,
+            "first_name": tg_user.first_name,
+            "username": tg_user.username,
+            "language": "latn",
+        }
 
 
 async def edit_callback(
