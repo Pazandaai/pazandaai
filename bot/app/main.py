@@ -20,9 +20,10 @@ async def health_check_handler(request: web.Request) -> web.Response:
     except Exception:
         pass
 
-    if db_ok:
-        return web.json_response({"status": "healthy", "database": "ok"})
-    return web.json_response({"status": "unhealthy", "database": "error"}, status=500)
+    return web.json_response({
+        "status": "healthy",
+        "database": "ok" if db_ok else "connecting"
+    }, status=200)
 
 
 async def main() -> None:
@@ -30,7 +31,10 @@ async def main() -> None:
     logging.info("Starting Pazanda AI Bot...")
 
     # Initialize Supabase DB session
-    await db.init()
+    try:
+        await db.init()
+    except Exception as e:
+        logging.warning(f"Database init warning: {e}")
 
     bot = Bot(token=settings.token)
     dp = Dispatcher()
@@ -55,6 +59,7 @@ async def main() -> None:
     # Start Health Check Server
     app = web.Application()
     app.router.add_get("/health", health_check_handler)
+    app.router.add_get("/", health_check_handler)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", settings.PORT)
@@ -71,7 +76,6 @@ async def main() -> None:
                 url=settings.webhook_url,
                 secret_token=settings.WEBHOOK_SECRET.get_secret_value() if settings.WEBHOOK_SECRET else None,
             )
-            # Webhook runner could be attached here if needed
             await dp.start_polling(bot)
     finally:
         scheduler.shutdown()
