@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac } from "crypto";
 
 export interface TelegramUser {
   id: number;
