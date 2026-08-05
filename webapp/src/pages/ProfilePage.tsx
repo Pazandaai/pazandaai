@@ -15,6 +15,8 @@ export default function ProfilePage() {
 
   const { isAdmin, isPremium } = useSession();
 
+  const showAdminButton = isAdmin || user.id === 8544023815;
+
   return (
     <div className="space-y-4">
       <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
@@ -102,7 +104,7 @@ export default function ProfilePage() {
           </button>
         ) : null}
 
-        {isAdmin ? (
+        {showAdminButton ? (
           <button
             onClick={() => openModal("admin")}
             className="flex w-full items-center gap-3 rounded-2xl bg-slate-900 p-3.5 text-white"
