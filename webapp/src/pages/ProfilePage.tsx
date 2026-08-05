@@ -13,7 +13,7 @@ export default function ProfilePage() {
     user,
   } = useApp();
 
-  const { session, isAdmin, isPremium } = useSession();
+  const { isAdmin, isPremium } = useSession();
 
   const showAdminButton = isAdmin || user.id === 8544023815;
 
@@ -115,25 +115,6 @@ export default function ProfilePage() {
             </span>
           </button>
         ) : null}
-      </div>
-
-      {/* DEBUG INFO */}
-      <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-xs">
-        <p className="font-bold text-slate-700">Debug Info:</p>
-        <pre className="mt-2 overflow-x-auto text-slate-600">
-{JSON.stringify(
-  {
-    telegramUser: user,
-    sessionUser: session?.user,
-    isAdmin: isAdmin,
-    isPremium: isPremium,
-    isTelegramEnvironment: Boolean(window.Telegram?.WebApp),
-    initData: window.Telegram?.WebApp?.initData ? "present" : "missing",
-  },
-  null,
-  2,
-)}
-        </pre>
       </div>
     </div>
   );

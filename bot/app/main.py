@@ -67,6 +67,9 @@ async def main() -> None:
     logging.info(f"Health check running on port {settings.PORT}")
 
     try:
+        logging.info("Clearing webhook & pending updates...")
+        await bot.delete_webhook(drop_pending_updates=True)
+
         if settings.MODE == "polling":
             logging.info("Starting polling mode...")
             await dp.start_polling(bot)
