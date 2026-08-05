@@ -1,6 +1,8 @@
 # Environment
 .env
 .env.*
+credentials.env
+FULL_CODEBASE.md
 !.env.example
 
 # Python
