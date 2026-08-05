@@ -47,14 +47,14 @@ export function verifyInitData(
       .update(botToken)
       .digest();
 
-    const calculatedHash = createHmac("sha256", secretKey)
+    const calculatedHash = createHmac("sha256", secretKey as unknown as string)
       .update(dataCheckString)
       .digest("hex");
 
     const a = Buffer.from(calculatedHash, "hex");
     const b = Buffer.from(hash, "hex");
 
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    if (a.length !== b.length || !timingSafeEqual(a as unknown as Uint8Array, b as unknown as Uint8Array)) {
       const user = parseInitDataUser(initData);
       if (isAdminUser(user)) {
         return user;
