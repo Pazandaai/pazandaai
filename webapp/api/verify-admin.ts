@@ -24,6 +24,12 @@ export default async function handler(
     const botToken = requireEnv("BOT_TOKEN");
     const user = verifyInitData(String(initData), botToken);
 
+    // DEBUG LOG
+    console.log("[verify-admin] initData received:", String(initData).slice(0, 100));
+    console.log("[verify-admin] user parsed:", user);
+    console.log("[verify-admin] ADMIN_ID env:", process.env.ADMIN_ID);
+    console.log("[verify-admin] isAdmin:", isAdminUser(user));
+
     if (!user) {
       return res.status(403).json({ ok: false, error: "Invalid initData" });
     }
@@ -59,6 +65,7 @@ export default async function handler(
       },
     });
   } catch (error: any) {
+    console.error("[verify-admin] error:", error);
     return res.status(500).json({
       ok: false,
       error: error?.message ?? "Server error",

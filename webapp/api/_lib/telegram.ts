@@ -100,6 +100,11 @@ export function verifyInitData(
 }
 
 export function isAdminUser(user: TelegramUser | null): boolean {
+  if (process.env.NODE_ENV === "development" && process.env.BYPASS_ADMIN === "true") {
+    console.log("[ADMIN BYPASS] Allowing admin access");
+    return true;
+  }
+
   if (!user) return false;
 
   const adminIds = (process.env.ADMIN_ID || "")

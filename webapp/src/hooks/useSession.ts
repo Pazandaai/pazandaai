@@ -11,8 +11,10 @@ export function useSession() {
 
     try {
       const data = await verifySession();
+      console.log("[useSession] session response:", data);
       setSession(data);
-    } catch {
+    } catch (error) {
+      console.error("[useSession] error:", error);
       setSession(null);
     } finally {
       setLoading(false);
