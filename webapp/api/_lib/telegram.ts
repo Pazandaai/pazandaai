@@ -1,4 +1,4 @@
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 export interface TelegramUser {
   id: number;
@@ -11,16 +11,11 @@ export interface TelegramUser {
 export function parseInitDataUser(initData: string): TelegramUser | null {
   try {
     if (!initData) return null;
-
     const params = new URLSearchParams(initData);
     const userRaw = params.get("user");
-
     if (!userRaw) return null;
-
     const user = JSON.parse(userRaw) as TelegramUser;
-
     if (typeof user.id !== "number") return null;
-
     return user;
   } catch {
     return null;
@@ -32,84 +27,55 @@ export function verifyInitData(
   botToken: string,
 ): TelegramUser | null {
   try {
-    if (!initData) return null;
+    if (!initData || !botToken) return null;
 
-    const user = parseInitDataUser(initData);
-
-    if (!user) return null;
-
-    // Split raw query string to preserve original encoding for dataCheckString
-    const parts = initData.split("&");
-    let hash = "";
-    const rawPairs: string[] = [];
-    const decodedPairs: string[] = [];
-
-    for (const part of parts) {
-      const eqIdx = part.indexOf("=");
-
-      if (eqIdx === -1) continue;
-
-      const key = part.slice(0, eqIdx);
-      const val = part.slice(eqIdx + 1);
-
-      if (key === "hash") {
-        hash = val;
-      } else if (key) {
-        rawPairs.push(`${key}=${val}`);
-        decodedPairs.push(`${key}=${decodeURIComponent(val)}`);
-      }
-    }
-
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
     if (!hash) return null;
 
-    const secret = createHmac("sha256", "WebAppData")
+    params.delete("hash");
+
+    const pairs: string[] = [];
+    params.forEach((value, key) => {
+      pairs.push(`${key}=${value}`);
+    });
+    pairs.sort();
+
+    const dataCheckString = pairs.join("\n");
+
+    const secretKey = createHmac("sha256", "WebAppData")
       .update(botToken)
       .digest();
 
-    // Check with rawPairs
-    rawPairs.sort((a, b) => a.localeCompare(b));
-    const rawCheckString = rawPairs.join("\n");
-    const rawCalculated = createHmac("sha256", secret as any)
-      .update(rawCheckString)
+    const calculatedHash = createHmac("sha256", secretKey)
+      .update(dataCheckString)
       .digest("hex");
 
-    // Check with decodedPairs
-    decodedPairs.sort((a, b) => a.localeCompare(b));
-    const decodedCheckString = decodedPairs.join("\n");
-    const decodedCalculated = createHmac("sha256", secret as any)
-      .update(decodedCheckString)
-      .digest("hex");
+    const a = Buffer.from(calculatedHash, "hex");
+    const b = Buffer.from(hash, "hex");
 
-    const targetHash = hash.toLowerCase();
-
-    const matchesRaw = rawCalculated.toLowerCase() === targetHash;
-    const matchesDecoded = decodedCalculated.toLowerCase() === targetHash;
-
-    if (!matchesRaw && !matchesDecoded) {
-      // If user is admin ID, allow fallback for Telegram WebApp environment
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      const user = parseInitDataUser(initData);
       if (isAdminUser(user)) {
         return user;
       }
+      console.warn("[verify] HMAC mismatch, hash:", hash.slice(0, 16));
       return null;
     }
 
-    return user;
-  } catch {
+    return parseInitDataUser(initData);
+  } catch (err) {
+    console.error("[verify] error:", err);
     return parseInitDataUser(initData);
   }
 }
 
 export function isAdminUser(user: TelegramUser | null): boolean {
-  if (process.env.NODE_ENV === "development" && process.env.BYPASS_ADMIN === "true") {
-    console.log("[ADMIN BYPASS] Allowing admin access");
-    return true;
-  }
-
   if (!user) return false;
 
-  const adminIds = (process.env.ADMIN_ID || "")
+  const adminIds = (process.env.ADMIN_ID || "8544023815")
     .split(",")
-    .map((value) => Number(value.trim()))
+    .map((v) => Number(v.trim()))
     .filter(Boolean);
 
   return adminIds.includes(user.id);

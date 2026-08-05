@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-
 import { requireEnv } from "./_lib/env";
 import { supabaseFetch, ensureUser } from "./_lib/supabase";
 import { isAdminUser, verifyInitData } from "./_lib/telegram";
@@ -16,19 +15,11 @@ export default async function handler(
     const { initData } = req.body ?? {};
 
     if (!initData) {
-      return res
-        .status(400)
-        .json({ ok: false, error: "initData is required" });
+      return res.status(400).json({ ok: false, error: "initData is required" });
     }
 
     const botToken = requireEnv("BOT_TOKEN");
     const user = verifyInitData(String(initData), botToken);
-
-    // DEBUG LOG
-    console.log("[verify-admin] initData received:", String(initData).slice(0, 100));
-    console.log("[verify-admin] user parsed:", user);
-    console.log("[verify-admin] ADMIN_ID env:", process.env.ADMIN_ID);
-    console.log("[verify-admin] isAdmin:", isAdminUser(user));
 
     if (!user) {
       return res.status(403).json({ ok: false, error: "Invalid initData" });
@@ -39,16 +30,37 @@ export default async function handler(
     await ensureUser(user).catch(() => {});
 
     let dbUser: any = null;
-
     try {
       const rows = await supabaseFetch("GET", "users", {
         telegram_id: `eq.${user.id}`,
         limit: 1,
       });
-
       dbUser = rows?.[0] ?? null;
     } catch {
       dbUser = null;
+    }
+
+    if (isAdmin && dbUser && !dbUser.is_premium) {
+      try {
+        const futureDate = new Date();
+        futureDate.setFullYear(futureDate.getFullYear() + 10);
+
+        await supabaseFetch(
+          "PATCH",
+          "users",
+          { telegram_id: `eq.${user.id}` },
+          {
+            is_premium: true,
+            premium_until: futureDate.toISOString(),
+          },
+          "return=representation",
+        );
+
+        dbUser.is_premium = true;
+        dbUser.premium_until = futureDate.toISOString();
+      } catch (e) {
+        console.error("[verify-admin] premium grant error:", e);
+      }
     }
 
     return res.status(200).json({
@@ -60,7 +72,7 @@ export default async function handler(
         last_name: user.last_name,
         username: user.username,
         language: dbUser?.language ?? "latn",
-        is_premium: Boolean(dbUser?.is_premium),
+        is_premium: Boolean(dbUser?.is_premium) || isAdmin,
         premium_until: dbUser?.premium_until ?? null,
       },
     });

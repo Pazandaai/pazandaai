@@ -15,9 +15,9 @@ function AdminInner() {
 
   const isUserAdmin = isAdmin || user.id === 8544023815;
 
-  const [tab, setTab] = useState<"recipes" | "banner" | "lifehacks">(
-    "recipes",
-  );
+  const [tab, setTab] = useState<
+    "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks"
+  >("stats");
 
   return (
     <div className="fixed inset-0 z-[90] bg-slate-50">
@@ -37,41 +37,28 @@ function AdminInner() {
           </div>
         </header>
 
-        <div className="px-4 pt-3">
-          <div className="grid grid-cols-3 gap-2 rounded-3xl bg-slate-100 p-1.5">
+        <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pt-3 pb-1">
+          {[
+            { id: "stats", label: "📊 Statistika" },
+            { id: "users", label: "👥 Foydalanuvchilar" },
+            { id: "payments", label: "💳 To'lovlar" },
+            { id: "broadcast", label: "📣 Broadcast" },
+            { id: "recipes", label: "🍳 Retseptlar" },
+            { id: "lifehacks", label: "💡 Lifehacklar" },
+            { id: "banner", label: "🖼 Banner" },
+          ].map((item) => (
             <button
-              onClick={() => setTab("recipes")}
+              key={item.id}
+              onClick={() => setTab(item.id as any)}
               className={
-                tab === "recipes"
-                  ? "rounded-2xl bg-white px-2 py-2 text-xs font-extrabold text-[#DB2777] shadow"
-                  : "rounded-2xl px-2 py-2 text-xs font-bold text-slate-500"
+                tab === item.id
+                  ? "shrink-0 rounded-2xl bg-[#DB2777] px-3 py-2 text-xs font-extrabold text-white shadow"
+                  : "shrink-0 rounded-2xl bg-white px-3 py-2 text-xs font-bold text-slate-500 shadow-sm"
               }
             >
-              {format("Retseptlar")}
+              {item.label}
             </button>
-
-            <button
-              onClick={() => setTab("banner")}
-              className={
-                tab === "banner"
-                  ? "rounded-2xl bg-white px-2 py-2 text-xs font-extrabold text-[#DB2777] shadow"
-                  : "rounded-2xl px-2 py-2 text-xs font-bold text-slate-500"
-              }
-            >
-              {format("Banner")}
-            </button>
-
-            <button
-              onClick={() => setTab("lifehacks")}
-              className={
-                tab === "lifehacks"
-                  ? "rounded-2xl bg-white px-2 py-2 text-xs font-extrabold text-[#DB2777] shadow"
-                  : "rounded-2xl px-2 py-2 text-xs font-bold text-slate-500"
-              }
-            >
-              {format("Lifehacklar")}
-            </button>
-          </div>
+          ))}
         </div>
 
         <main className="flex-1 overflow-y-auto px-4 pb-10 pt-4">
@@ -79,21 +66,327 @@ function AdminInner() {
             <div className="space-y-3">
               <div className="h-24 animate-pulse rounded-3xl bg-slate-200/70" />
               <div className="h-24 animate-pulse rounded-3xl bg-slate-200/70" />
-              <div className="h-24 animate-pulse rounded-3xl bg-slate-200/70" />
             </div>
           ) : !isUserAdmin ? (
             <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-500">
-              {format("Bu bo‘lim faqat admin uchun.")}
+              {format("Bu bo'lim faqat admin uchun.")}
             </div>
           ) : (
             <>
+              {tab === "stats" ? <StatsAdmin /> : null}
+              {tab === "users" ? <UsersAdmin /> : null}
+              {tab === "payments" ? <PaymentsAdmin /> : null}
+              {tab === "broadcast" ? <BroadcastAdmin /> : null}
               {tab === "recipes" ? <RecipesAdmin /> : null}
-              {tab === "banner" ? <BannerAdmin /> : null}
               {tab === "lifehacks" ? <LifehacksAdmin /> : null}
+              {tab === "banner" ? <BannerAdmin /> : null}
             </>
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+// =====================
+// STATS ADMIN
+// =====================
+function StatsAdmin() {
+  const { format } = useApp();
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    adminRequest("stats")
+      .then((res) => setStats(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return <div className="h-48 animate-pulse rounded-3xl bg-slate-200/70" />;
+  }
+
+  if (!stats) {
+    return (
+      <div className="rounded-3xl bg-red-50 p-4 text-sm text-red-600">
+        {format("Statistika yuklanmadi")}
+      </div>
+    );
+  }
+
+  const items = [
+    { label: "👥 Jami foydalanuvchilar", value: stats.total_users },
+    { label: "💎 Premium", value: stats.premium_users },
+    { label: "⛔ Banlangan", value: stats.banned_users },
+    { label: "💳 Kutilayotgan to'lovlar", value: stats.pending_payments },
+    { label: "🍳 Retseptlar", value: stats.total_recipes },
+    { label: "💡 Lifehacklar", value: stats.total_lifehacks },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {items.map((item, i) => (
+        <div key={i} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500">{item.label}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">
+            {item.value}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// =====================
+// USERS ADMIN
+// =====================
+function UsersAdmin() {
+  const { format } = useApp();
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const load = useCallback(async (q?: string) => {
+    setLoading(true);
+    try {
+      const res = await adminRequest("list_users", q ? { search: q } : {});
+      setUsers(res.data ?? []);
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggleBan = async (telegramId: number) => {
+    await adminRequest("toggle_ban", { telegram_id: telegramId });
+    load(search || undefined);
+  };
+
+  const grantPremium = async (telegramId: number) => {
+    await adminRequest("grant_premium", { telegram_id: telegramId, days: 30 });
+    load(search || undefined);
+  };
+
+  const revokePremium = async (telegramId: number) => {
+    await adminRequest("revoke_premium", { telegram_id: telegramId });
+    load(search || undefined);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") load(search || undefined); }}
+          placeholder={format("ID, username yoki ism qidiring...")}
+          className="h-11 flex-1 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none"
+        />
+        <button
+          onClick={() => load(search || undefined)}
+          className="h-11 rounded-2xl bg-[#DB2777] px-4 text-sm font-bold text-white"
+        >
+          🔎
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />
+      ) : users.length === 0 ? (
+        <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+          {format("Foydalanuvchilar topilmadi")}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {users.map((u) => (
+            <div key={u.telegram_id} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-slate-900">
+                    {u.first_name} {u.last_name ?? ""}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {u.username ? `@${u.username}` : "-"} • ID: {u.telegram_id}
+                  </p>
+                  <div className="mt-1 flex gap-1">
+                    {u.is_premium ? (
+                      <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[9px] font-bold text-pink-600">Premium</span>
+                    ) : null}
+                    {u.is_banned ? (
+                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-[9px] font-bold text-red-600">Banned</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => toggleBan(u.telegram_id)}
+                    className={
+                      u.is_banned
+                        ? "rounded-xl bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-600"
+                        : "rounded-xl bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600"
+                    }
+                  >
+                    {u.is_banned ? format("Unban") : format("Ban")}
+                  </button>
+
+                  {u.is_premium ? (
+                    <button
+                      onClick={() => revokePremium(u.telegram_id)}
+                      className="rounded-xl bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600"
+                    >
+                      {format("Premium olish")}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => grantPremium(u.telegram_id)}
+                      className="rounded-xl bg-pink-50 px-2 py-1 text-[10px] font-bold text-pink-600"
+                    >
+                      {format("Premium berish")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =====================
+// PAYMENTS ADMIN
+// =====================
+function PaymentsAdmin() {
+  const { format } = useApp();
+  const [payments, setPayments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await adminRequest("list_payments", { status: "pending" });
+      setPayments(res.data ?? []);
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const approve = async (requestId: string) => {
+    await adminRequest("approve_payment", { request_id: requestId });
+    load();
+  };
+
+  const reject = async (requestId: string) => {
+    await adminRequest("reject_payment", { request_id: requestId });
+    load();
+  };
+
+  return (
+    <div className="space-y-3">
+      {loading ? (
+        <div className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />
+      ) : payments.length === 0 ? (
+        <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+          {format("Kutilayotgan to'lovlar yo'q")}
+        </div>
+      ) : (
+        payments.map((p) => (
+          <div key={p.id} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+            <div className="flex items-start gap-3">
+              {p.screenshot_url ? (
+                <img
+                  src={p.screenshot_url}
+                  alt="screenshot"
+                  className="h-20 w-20 rounded-xl object-cover"
+                />
+              ) : null}
+
+              <div className="flex-1">
+                <p className="text-sm font-bold text-slate-900">
+                  User ID: {p.user_telegram_id}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {new Date(p.created_at).toLocaleString()}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={() => approve(p.id)}
+                  className="rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-600"
+                >
+                  ✅
+                </button>
+                <button
+                  onClick={() => reject(p.id)}
+                  className="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600"
+                >
+                  ❌
+                </button>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// =====================
+// BROADCAST ADMIN
+// =====================
+function BroadcastAdmin() {
+  const { format } = useApp();
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const send = async () => {
+    if (!text.trim() || sending) return;
+
+    if (!window.confirm(format("Barcha foydalanuvchilarga yuborilsinmi?"))) return;
+
+    setSending(true);
+    setResult(null);
+
+    try {
+      const res = await adminRequest("broadcast", { text: text.trim() });
+      setResult(format(`Yuborildi: ${res.sent}, Xato: ${res.failed}`));
+      setText("");
+    } catch (err: any) {
+      setResult(err?.message ?? format("Xatolik"));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={format("Broadcast matnini yozing...")}
+        rows={5}
+        className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-sm outline-none"
+      />
+
+      {result ? (
+        <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-600">
+          {result}
+        </div>
+      ) : null}
+
+      <button
+        onClick={send}
+        disabled={!text.trim() || sending}
+        className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white disabled:opacity-40"
+      >
+        {sending ? format("Yuborilmoqda...") : format("📣 Yuborish")}
+      </button>
     </div>
   );
 }
