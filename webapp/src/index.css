@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.glass-dark {
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.banner-overlay {
+  background: linear-gradient(
+    to top,
+    rgba(15, 23, 42, 0.72),
+    rgba(15, 23, 42, 0.15),
+    rgba(15, 23, 42, 0.02)
+  );
+}
+
+.gold-gradient {
+  background: linear-gradient(135deg, #f5d06c 0%, #d4af37 100%);
+}
+
+.soft-shadow {
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}

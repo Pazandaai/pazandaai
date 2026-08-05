@@ -1,0 +1,28 @@
+# Telegram bot framework
+aiogram>=3.13,<4.0
+
+# Async HTTP / health-check
+aiohttp>=3.10,<4.0
+
+# Scheduler
+APScheduler>=3.10,<4.0
+
+# Settings / validation
+pydantic>=2.9,<3.0
+pydantic-settings>=2.5,<3.0
+
+# Env loading
+python-dotenv>=1.0,<2.0
+
+# Supabase
+supabase>=2.8,<3.0
+
+# Cloudflare R2 / S3 compatible storage
+boto3>=1.35,<2.0
+aioboto3>=13.1,<14.0
+
+# Async file operations
+aiofiles>=24.1
+
+# Timezone support
+pytz>=2024.1
