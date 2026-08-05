@@ -19,7 +19,35 @@ export function getInitData(): string {
 }
 
 export function getTelegramUser() {
-  return tg?.initDataUnsafe?.user;
+  const unsafeUser = tg?.initDataUnsafe?.user;
+
+  if (unsafeUser) {
+    return unsafeUser;
+  }
+
+  const initData = tg?.initData;
+
+  if (!initData) {
+    console.warn("[Telegram] initData mavjud emas");
+    return null;
+  }
+
+  try {
+    const params = new URLSearchParams(initData);
+    const userString = params.get("user");
+
+    if (!userString) {
+      console.warn("[Telegram] user parametri initData ichida yo'q");
+      return null;
+    }
+
+    const user = JSON.parse(userString);
+    console.log("[Telegram] User parsed from initData:", user);
+    return user;
+  } catch (error) {
+    console.error("[Telegram] initData parse xatosi:", error);
+    return null;
+  }
 }
 
 export function hapticImpact(style: "light" | "medium" | "heavy" = "light") {
