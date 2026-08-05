@@ -180,3 +180,16 @@ def payment_review_kb(request_id: str, lang: str) -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def user_ban_kb(user_id: int, is_banned: bool) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Unban" if is_banned else "⛔ Ban",
+                    callback_data=f"admin:toggle_ban:{user_id}",
+                )
+            ]
+        ]
+    )

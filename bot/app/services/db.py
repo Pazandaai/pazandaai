@@ -24,6 +24,8 @@ class SupabaseDB:
                 }
             )
 
+    connect = init
+
     async def close(self) -> None:
         if self._session and not self._session.closed:
             await self._session.close()

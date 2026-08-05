@@ -130,7 +130,7 @@ async def premium_screenshot(message: Message, state: FSMContext) -> None:
         await message.bot.download(message.photo[-1].file_id, destination=buffer)
         data = buffer.getvalue()
 
-        content_type = message.photo[-1].mime_type or "image/jpeg"
+        content_type = getattr(message.photo[-1], "mime_type", None) or "image/jpeg"
         screenshot_url = await upload_screenshot(user.id, data, content_type)
 
         await ensure_user(user)

@@ -29,6 +29,7 @@ def extract_user(event: Any) -> User | None:
 
 class BanMiddleware(BaseMiddleware):
     def __init__(self, ttl: int = 30) -> None:
+        super().__init__()
         self.ttl = ttl
         self.cache: dict[int, tuple[float, bool]] = {}
 
@@ -75,6 +76,7 @@ class BanMiddleware(BaseMiddleware):
 
 class ThrottlingMiddleware(BaseMiddleware):
     def __init__(self, rate: float = 0.5) -> None:
+        super().__init__()
         self.rate = rate
         self.last: dict[int, float] = {}
 
