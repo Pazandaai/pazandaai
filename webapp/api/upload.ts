@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { requireEnv } from "./_lib/env";
-import { uploadBase64ToR2 } from "./_lib/r2";
-import { ensureUser, supabaseFetch } from "./_lib/supabase";
-import { isAdminUser, verifyInitData } from "./_lib/telegram";
+import { requireEnv } from "./_lib/env.js";
+import { uploadBase64ToR2 } from "./_lib/r2.js";
+import { ensureUser, supabaseFetch } from "./_lib/supabase.js";
+import { isAdminUser, verifyInitData } from "./_lib/telegram.js";
 
 export const config = {
   api: {
