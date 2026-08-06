@@ -8492,6 +8492,27 @@ export default async function handler(
         return res.status(200).json({ ok: true, data: data?.[0] ?? null });
       }
 
+      case "get_product_catalog": {
+        const data = await supabaseFetch("GET", "app_settings", { key: "eq.product_catalog", limit: 1 });
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+      case "save_product_catalog": {
+        const value = payload?.value ?? {};
+        const data = await supabaseFetch(
+          "POST", "app_settings", { on_conflict: "key" },
+          { key: "product_catalog", value },
+          "resolution=merge-duplicates,return=representation",
+        );
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+      case "rename_category": {
+        const oldName = String(payload?.old_name ?? "").trim();
+        const newName = String(payload?.new_name ?? "").trim();
+        if (!oldName || !newName) return res.status(400).json({ ok: false, error: "names required" });
+        await supabaseFetch("PATCH", "recipes", { category: `eq.${oldName}` }, { category: newName }, "return=minimal");
+        return res.status(200).json({ ok: true });
+      }
+
       case "get_banner": {
         const data = await supabaseFetch("GET", "app_settings", {
           key: "eq.home_banner",
@@ -8635,6 +8656,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
   try {
     const data = await supabaseFetch("GET", "app_settings", { key: "eq.payment_card", limit: 1 });
+    res.setHeader("Cache-Control", "public, s-maxage=60");
+    return res.status(200).json({ ok: true, value: data?.[0]?.value ?? null });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error?.message ?? "Server error" });
+  }
+}
+
+`
+
+---
+
+## 📄 webapp/api/product-catalog.ts
+
+`typescript
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { supabaseFetch } from "./_lib/supabase.js";
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  try {
+    const data = await supabaseFetch("GET", "app_settings", { key: "eq.product_catalog", limit: 1 });
     res.setHeader("Cache-Control", "public, s-maxage=60");
     return res.status(200).json({ ok: true, value: data?.[0]?.value ?? null });
   } catch (error: any) {
@@ -10094,6 +10136,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { useSession } from "../../hooks/useSession";
 import { adminRequest } from "../../lib/api";
+import { DEFAULT_CATEGORIES, DEFAULT_PRODUCTS } from "../../lib/products";
 import ImageUploader from "./ImageUploader";
 
 const inputClass =
@@ -10113,8 +10156,8 @@ function ingredientsToLines(list: any[]): string {
       const name = String(i?.name ?? "").trim();
       const qty = typeof i?.quantity === "number" ? String(i.quantity) : "";
       const unit = String(i?.unit ?? "").trim();
-      const parts = [name, qty, unit].filter((p, idx) => !(idx > 0 && p === ""));
-      return parts.join(" | ");
+      if (!name) return "";
+      return [name, qty, unit].filter(Boolean).join(" | ");
     })
     .filter(Boolean)
     .join("\n");
@@ -10171,7 +10214,7 @@ function AdminInner() {
   const isUserAdmin = isAdmin || user.id === 8544023815;
 
   const [tab, setTab] = useState<
-    "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks" | "catimg"
+    "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks" | "cats" | "products"
   >("stats");
 
   return (
@@ -10200,7 +10243,8 @@ function AdminInner() {
             { id: "broadcast", label: "📣 Broadcast" },
             { id: "recipes", label: "🍳 Retseptlar" },
             { id: "lifehacks", label: "💡 Lifehacklar" },
-            { id: "catimg", label: "📁 Kategoriya rasmlari" },
+            { id: "cats", label: "📁 Kategoriyalar" },
+            { id: "products", label: "🧺 Mahsulotlar" },
             { id: "banner", label: "🖼 Banner" },
           ].map((item) => (
             <button
@@ -10235,7 +10279,8 @@ function AdminInner() {
               {tab === "broadcast" ? <BroadcastAdmin /> : null}
               {tab === "recipes" ? <RecipesAdmin /> : null}
               {tab === "lifehacks" ? <LifehacksAdmin /> : null}
-              {tab === "catimg" ? <CategoryImagesAdmin /> : null}
+              {tab === "cats" ? <CategoriesAdmin /> : null}
+              {tab === "products" ? <ProductCatalogAdmin /> : null}
               {tab === "banner" ? <BannerAdmin /> : null}
             </>
           )}
@@ -11552,44 +11597,141 @@ function LifehacksAdmin() {
   );
 }
 
-function CategoryImagesAdmin() {
+function CategoriesAdmin() {
   const { format } = useApp();
-  const [images, setImages] = useState<Record<string, string>>({});
   const [categories, setCategories] = useState<string[]>([]);
-  const [saved, setSaved] = useState(false);
+  const [images, setImages] = useState<Record<string, string>>({});
+  const [names, setNames] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    adminRequest("get_category_images")
-      .then((r) => setImages(r.data?.value ?? {}))
-      .catch(() => {});
-    adminRequest("list_recipes")
-      .then((r) => {
-        const cats = Array.from(new Set((r.data ?? []).map((x: any) => x.category).filter(Boolean)));
-        setCategories(cats as string[]);
-      })
-      .catch(() => {});
-  }, []);
+  const load = async () => {
+    const r = await adminRequest("list_recipes");
+    const cats = Array.from(new Set((r.data ?? []).map((x: any) => x.category).filter(Boolean))) as string[];
+    setCategories(cats);
+    const img = await adminRequest("get_category_images").catch(() => null);
+    setImages(img?.data?.value ?? {});
+  };
+  useEffect(() => { load().catch(() => {}); }, []);
 
-  const save = async () => {
+  const saveImages = async () => {
     await adminRequest("save_category_images", { value: images });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+  };
+  const rename = async (oldName: string) => {
+    const newName = (names[oldName] ?? "").trim();
+    if (!newName || newName === oldName) return;
+    await adminRequest("rename_category", { old_name: oldName, new_name: newName });
+    await load();
   };
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-semibold text-slate-500">
-        {format("Har bir kategoriya (papka) uchun ixtiyoriy rasm yuklang. Rasm yo'q bo'lsa emoji ko'rinadi.")}
-      </p>
       {categories.map((cat) => (
         <div key={cat} className="space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
           <p className="text-sm font-bold text-slate-900">{format(cat)}</p>
-          <ImageUploader
-            value={images[cat] ?? ""}
-            onChange={(url) => setImages((prev) => ({ ...prev, [cat]: url }))}
-          />
+          <ImageUploader value={images[cat] ?? ""} onChange={(url) => setImages((p) => ({ ...p, [cat]: url }))} />
+          <div className="flex gap-2">
+            <input
+              value={names[cat] ?? ""}
+              onChange={(e) => setNames((p) => ({ ...p, [cat]: e.target.value }))}
+              placeholder={format("Yangi nom...")}
+              className={inputClass}
+            />
+            <button onClick={() => rename(cat)} className="shrink-0 rounded-2xl bg-slate-900 px-3 text-xs font-bold text-white">
+              ✏️
+            </button>
+          </div>
         </div>
       ))}
+      <button onClick={saveImages} className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white">
+        {format("Rasmlarni saqlash")}
+      </button>
+    </div>
+  );
+}
+
+function ProductCatalogAdmin() {
+  const { format } = useApp();
+  const [categories, setCategories] = useState<any[]>(DEFAULT_CATEGORIES as any);
+  const [products, setProducts] = useState<any[]>(DEFAULT_PRODUCTS as any);
+  const [activeCat, setActiveCat] = useState("all");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminRequest("get_product_catalog")
+      .then((r) => {
+        const v = r.data?.value;
+        if (v?.categories?.length) setCategories(v.categories);
+        if (v?.products?.length) setProducts(v.products);
+      })
+      .catch(() => {});
+  }, []);
+
+  const patchProduct = (key: string, patch: any) =>
+    setProducts((prev) => prev.map((p) => (p.key === key ? { ...p, ...patch } : p)));
+  const removeProduct = (key: string) => setProducts((prev) => prev.filter((p) => p.key !== key));
+  const addProduct = () =>
+    setProducts((prev) => [
+      ...prev,
+      { key: `p${Date.now()}`, label: "Yangi mahsulot", emoji: "", category: activeCat === "all" ? "pantry" : activeCat },
+    ]);
+  const patchCategory = (id: string, patch: any) =>
+    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  const addCategory = () =>
+    setCategories((prev) => [...prev, { id: `c${Date.now()}`, label: "Yangi kategoriya", emoji: "🧺" }]);
+
+  const save = async () => {
+    await adminRequest("save_product_catalog", { value: { categories, products } });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  const visible = activeCat === "all" ? products : products.filter((p) => p.category === activeCat);
+
+  return (
+    <div className="space-y-3">
+      <div className="no-scrollbar flex gap-2 overflow-x-auto">
+        <button onClick={() => setActiveCat("all")} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${activeCat === "all" ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm"}`}>
+          {format("Barchasi")}
+        </button>
+        {categories.map((c) => (
+          <button key={c.id} onClick={() => setActiveCat(c.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${activeCat === c.id ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm"}`}>
+            {c.emoji} {format(c.label)}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
+        <p className="text-xs font-extrabold text-slate-500">{format("Kategoriyalar (nom/emoji tahrirlash)")}</p>
+        {categories.map((c) => (
+          <div key={c.id} className="flex gap-2">
+            <input value={c.emoji} onChange={(e) => patchCategory(c.id, { emoji: e.target.value })} className={`${inputClass} w-14 text-center`} />
+            <input value={c.label} onChange={(e) => patchCategory(c.id, { label: e.target.value })} className={inputClass} />
+          </div>
+        ))}
+        <button onClick={addCategory} className="h-10 w-full rounded-2xl bg-slate-100 text-xs font-bold text-slate-600">
+          + {format("Kategoriya")}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {visible.map((p) => (
+          <div key={p.key} className="flex items-center gap-2 rounded-3xl border border-slate-100 bg-white p-2.5 shadow-sm">
+            <input value={p.emoji} onChange={(e) => patchProduct(p.key, { emoji: e.target.value })} className={`${inputClass} w-12 text-center`} />
+            <input value={p.label} onChange={(e) => patchProduct(p.key, { label: e.target.value })} className={inputClass} />
+            <select value={p.category} onChange={(e) => patchProduct(p.key, { category: e.target.value })} className={`${inputClass} w-24 shrink-0`}>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.emoji}</option>
+              ))}
+            </select>
+            <button onClick={() => removeProduct(p.key)} className="shrink-0 rounded-xl bg-red-50 p-2 text-red-500">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button onClick={addProduct} className="h-11 w-full rounded-2xl bg-slate-900 text-sm font-bold text-white">
+        + {format("Mahsulot qo'shish")}
+      </button>
       <button onClick={save} className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white">
         {saved ? format("✅ Saqlandi") : format("Saqlash")}
       </button>
@@ -11915,6 +12057,7 @@ import { ChevronDown, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { getCategoryEmoji } from "../../lib/lifehack-utils";
 import { hapticNotification } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Lifehack } from "../../types/lifehack";
@@ -11928,58 +12071,36 @@ export default function LifehackCard({ lifehack }: { lifehack: Lifehack }) {
 
   const copyContent = async () => {
     try {
-      await navigator.clipboard.writeText(
-        `${format(lifehack.title)}\n${format(lifehack.content)}`,
-      );
+      await navigator.clipboard.writeText(`${format(lifehack.title)}\n${format(lifehack.content)}`);
       setCopied(true);
       hapticNotification("success");
       setTimeout(() => setCopied(false), 1500);
     } catch {}
   };
 
-  // Preview uchun ** belgilarni tozalash
-  const plainPreview = lifehack.content.replace(/\*\*/g, "").replace(/\n+/g, " ");
-
   return (
-    <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-display text-sm font-bold leading-5 text-slate-900">
-            {format(lifehack.title)}
-          </h3>
+    <div className="rounded-3xl border border-amber-100 bg-gradient-to-br from-white to-amber-50/60 p-3.5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-lg">
+          {getCategoryEmoji(lifehack.category)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="line-clamp-2 text-[13px] font-bold leading-4 text-slate-900">{format(lifehack.title)}</h3>
           {lifehack.category ? (
-            <span className="mt-2 inline-block rounded-full bg-[#DB2777]/10 px-2.5 py-1 text-[10px] font-bold text-[#DB2777]">
+            <span className="mt-1.5 inline-block rounded-full bg-[#DB2777]/10 px-2 py-0.5 text-[9px] font-bold text-[#DB2777]">
               {format(lifehack.category)}
             </span>
           ) : null}
         </div>
-        <button
-          onClick={() => setExpanded((prev) => !prev)}
-          aria-expanded={expanded}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"
-        >
-          <ChevronDown
-            size={17}
-            className={cn("transition-transform duration-200", expanded ? "rotate-180" : "rotate-0")}
-          />
+        <button onClick={() => setExpanded((p) => !p)} aria-expanded={expanded}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm">
+          <ChevronDown size={15} className={cn("transition-transform", expanded ? "rotate-180" : "")} />
         </button>
       </div>
 
-      {!expanded ? (
-        <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-500">
-          {format(plainPreview)}
-        </p>
-      ) : null}
-
       <AnimatePresence initial={false}>
         {expanded ? (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            className="overflow-hidden"
-          >
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }} className="overflow-hidden">
             {lifehack.image_url ? (
               <div className="mt-3">
                 <ZoomableImage src={lifehack.image_url} alt={format(lifehack.title)} className="aspect-[16/9] rounded-2xl" />
@@ -11988,11 +12109,8 @@ export default function LifehackCard({ lifehack }: { lifehack: Lifehack }) {
             <div className="mt-3">
               <RichText text={format(lifehack.content)} />
             </div>
-            <button
-              onClick={copyContent}
-              className="mt-4 flex h-10 items-center gap-2 rounded-2xl bg-slate-900 px-4 text-xs font-bold text-white"
-            >
-              <Copy size={14} />
+            <button onClick={copyContent} className="mt-3 flex h-9 items-center gap-2 rounded-2xl bg-slate-900 px-3.5 text-xs font-bold text-white">
+              <Copy size={13} />
               {copied ? t("copied") : t("copy")}
             </button>
           </motion.div>
@@ -12037,7 +12155,7 @@ export default function LifehackFolderCard({
         {getCategoryEmoji(name)}
       </span>
 
-      <h3 className="mt-3 line-clamp-1 font-display text-sm font-bold text-slate-900">
+      <h3 className="mt-3 line-clamp-2 min-h-[32px] font-display text-[13px] font-bold leading-4 text-slate-900">
         {format(name)}
       </h3>
 
@@ -13214,7 +13332,8 @@ import { Loader2, Search, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 import { useApp } from "../../context/AppContext";
-import { PRODUCT_CATEGORIES, PRODUCTS, getProduct } from "../../lib/products";
+import { useProductCatalog } from "../../lib/catalog";
+import { findProduct } from "../../lib/products";
 import { getRecipeMatch } from "../../lib/recipe-utils";
 import { fuzzyScore } from "../../lib/search";
 import { hapticNotification, hapticSelection } from "../../lib/telegram";
@@ -13229,6 +13348,7 @@ interface Props {
 
 export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
   const { format, t } = useApp();
+  const { categories, products } = useProductCatalog();
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
@@ -13236,28 +13356,30 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  // ✅ Mahsulot qidiruvi — fuzzy, tagida dropdown
   const productHits = useMemo(() => {
     const q = query.trim();
     if (q.length < 1) return [];
-    return PRODUCTS
+    return products
       .map((p) => ({ p, score: fuzzyScore(q, [p.label, ...(p.aliases ?? [])].join(" ")) }))
       .filter((x) => x.score >= 20)
       .sort((a, b) => b.score - a.score)
       .slice(0, 8)
       .map((x) => x.p);
-  }, [query]);
+  }, [query, products]);
 
-  const filteredProducts = useMemo(
-    () => PRODUCTS.filter((p) => (activeCat === "all" ? true : p.category === activeCat)),
-    [activeCat],
+  const gridProducts = useMemo(
+    () => products.filter((p) => (activeCat === "all" ? true : p.category === activeCat)),
+    [products, activeCat],
   );
 
   const selectedTerms = useMemo(
-    () => selected.flatMap((k) => { const p = getProduct(k); return p ? [p.label, ...(p.aliases ?? [])] : [k]; }),
-    [selected],
+    () =>
+      selected.flatMap((k) => {
+        const p = findProduct(products, k);
+        return p ? [p.label, ...(p.aliases ?? [])] : [k];
+      }),
+    [selected, products],
   );
 
   const matches = useMemo(() => {
@@ -13293,7 +13415,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
   const badgeLabel = (item: (typeof matches)[number]) => {
     const n = item.match.missing.length;
     if (!n) return "100% mos ✅";
-    return `${item.match.matchPercent}% • ${n} ta yetmaydi`;
+    return `${item.match.matchPercent}% • ${n} ${t("matchMissing")}`;
   };
 
   const renderGroup = (title: string, items: typeof matches, badgeClass: string) => {
@@ -13318,7 +13440,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Prompt box */}
+      {/* Prompt box — FAQAT mahsulot qidiruvi */}
       <div className="rounded-3xl border border-[#DB2777]/10 bg-[#DB2777]/5 p-4">
         <div className="flex items-center gap-2 text-[#DB2777]">
           <Sparkles size={16} />
@@ -13327,7 +13449,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
         {selected.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {selected.map((key) => {
-              const p = getProduct(key);
+              const p = findProduct(products, key);
               return (
                 <button key={key} onClick={() => toggle(key)} className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-xs font-bold text-[#DB2777] shadow-sm">
                   <span>{p?.emoji}</span>
@@ -13341,15 +13463,13 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
             </button>
           </div>
         ) : (
-          <p className="mt-2 text-xs leading-5 text-slate-600">{format("Masalliqlarni tanlang — sizdagi mahsulotlar bo'yicha taom topamiz.")}</p>
+          <p className="mt-2 text-xs leading-5 text-slate-600">{t("matchSelectIngredients")}</p>
         )}
 
-        {/* ✅ Search — natijalar TAGIDA dropdown */}
         <div className="relative mt-2 border-t border-[#DB2777]/10 pt-2">
           <div className="flex items-center gap-2">
             <Search size={15} className="text-slate-400" />
             <input
-              ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setFocused(true)}
@@ -13369,7 +13489,6 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
                 >
                   <span className="text-lg">{p.emoji}</span>
                   <span className="flex-1 text-sm font-semibold text-slate-800">{format(p.label)}</span>
-                  {selected.includes(p.key) ? <X size={12} className="text-[#DB2777]" /> : null}
                 </button>
               ))}
             </div>
@@ -13377,7 +13496,6 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
         </div>
       </div>
 
-      {/* Tugma — yuqorida */}
       <button
         onClick={findMatches}
         disabled={!selected.length || searching}
@@ -13387,25 +13505,25 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
         {searching ? format("Tanlamoqda...") : `${format("Mos taomlarni topish")} ${selected.length ? `(${selected.length})` : ""}`}
       </button>
 
-      {/* Kategoriyalar + emoji grid (qidiruv bo'sh bo'lsa) */}
       <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
         <button onClick={() => setActiveCat("all")} className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === "all" ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}>
           {t("all")}
         </button>
-        {PRODUCT_CATEGORIES.map((c) => (
+        {categories.map((c) => (
           <button key={c.id} onClick={() => setActiveCat(c.id)} className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === c.id ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}>
             {c.emoji} {format(c.label)}
           </button>
         ))}
       </div>
+
       <div className="grid grid-cols-4 gap-2">
-        {filteredProducts.map((p) => {
+        {gridProducts.map((p) => {
           const sel = selected.includes(p.key);
           return (
             <motion.button key={p.key} whileTap={{ scale: 0.92 }} onClick={() => toggle(p.key)}
               className={cn("flex flex-col items-center gap-1 rounded-2xl border p-2", sel ? "border-[#DB2777] bg-[#DB2777]/10" : "border-slate-100 bg-white shadow-sm")}>
               <span className="text-xl">{p.emoji}</span>
-              <span className={cn("line-clamp-1 text-center text-[10px] font-semibold", sel ? "text-[#DB2777]" : "text-slate-600")}>
+              <span className={cn("line-clamp-2 text-center text-[10px] font-semibold leading-3", sel ? "text-[#DB2777]" : "text-slate-600")}>
                 {format(p.label)}
               </span>
             </motion.button>
@@ -13413,7 +13531,6 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
         })}
       </div>
 
-      {/* Natijalar */}
       <div ref={resultsRef} className="scroll-mt-20 space-y-5">
         <AnimatePresence>
           {searching ? (
@@ -13423,9 +13540,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
           ) : showResults ? (
             <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
               {matches.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-                  {t("matchNoResults")}
-                </div>
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{t("matchNoResults")}</div>
               ) : (
                 <>
                   {renderGroup(`✅ ${t("matchExact")}`, exact, "bg-emerald-50 text-emerald-600 ring-emerald-200")}
@@ -14493,6 +14608,48 @@ export function cacheSet(key: string, data: unknown): void {
 
 ---
 
+## 📄 webapp/src/lib/catalog.ts
+
+`typescript
+import { useEffect, useState } from "react";
+import {
+  DEFAULT_CATEGORIES,
+  DEFAULT_PRODUCTS,
+  type Product,
+  type ProductCategory,
+} from "./products";
+
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
+    ? "https://pazandaai.vercel.app"
+    : "")
+).replace(/\/$/, "");
+
+export function useProductCatalog() {
+  const [categories, setCategories] = useState<ProductCategory[]>(DEFAULT_CATEGORIES);
+  const [products, setProducts] = useState<Product[]>(DEFAULT_PRODUCTS);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/product-catalog`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        const v = j?.value;
+        if (v && Array.isArray(v.categories) && Array.isArray(v.products) && v.products.length > 0) {
+          setCategories(v.categories);
+          setProducts(v.products);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  return { categories, products };
+}
+
+`
+
+---
+
 ## 📄 webapp/src/lib/compress.ts
 
 `typescript
@@ -14825,6 +14982,13 @@ export function getCategoryEmoji(category?: string): string {
 ## 📄 webapp/src/lib/products.ts
 
 `typescript
+export interface ProductCategory {
+  id: string;
+  label: string;
+  emoji: string;
+  image?: string;
+}
+
 export interface Product {
   key: string;
   label: string;
@@ -14833,7 +14997,7 @@ export interface Product {
   aliases?: string[];
 }
 
-export const PRODUCT_CATEGORIES = [
+export const DEFAULT_CATEGORIES: ProductCategory[] = [
   { id: "veg", label: "Sabzavotlar", emoji: "🥕" },
   { id: "greens", label: "Ko'kat & Ziravor", emoji: "🌿" },
   { id: "meat", label: "Go'sht & Baliq", emoji: "🥩" },
@@ -14841,38 +15005,35 @@ export const PRODUCT_CATEGORIES = [
   { id: "grain", label: "Un & Don", emoji: "🌾" },
   { id: "fruit", label: "Mevalar", emoji: "🍎" },
   { id: "nuts", label: "Yong'oq & Urug'", emoji: "🥜" },
-  { id: "pantry", label: "Yog' & Souslar", emoji: "🫒" },
-] as const;
+  { id: "pantry", label: "Yog', Sous & Qo'shimcha", emoji: "🫒" },
+];
 
-const P = (
-  key: string,
-  label: string,
-  emoji: string,
-  category: string,
-  aliases: string[] = [],
-): Product => ({ key, label, emoji, category, aliases });
+const P = (key: string, label: string, emoji: string, category: string, aliases: string[] = []): Product =>
+  ({ key, label, emoji, category, aliases });
 
-export const PRODUCTS: Product[] = [
+export const DEFAULT_PRODUCTS: Product[] = [
   // 🥕 Sabzavotlar
   P("sabzi", "Sabzi", "🥕", "veg", ["sariq sabzi", "qizil sabzi"]),
-  P("piyoz", "Piyoz", "🧅", "veg", ["qizil piyoz", "ko'k piyoz", "sharlot piyoz"]),
+  P("piyoz", "Piyoz", "🧅", "veg", ["qizil piyoz", "ko'k piyoz", "sharlot piyoz", "yashil piyoz"]),
   P("kartoshka", "Kartoshka", "🥔", "veg"),
-  P("batat", "Shirin kartoshka", "🍠", "veg", ["batat"]),
+  P("batat", "Shirin kartoshka (batat)", "🍠", "veg", ["batat"]),
   P("sarimsoq", "Sarimsoq", "🧄", "veg"),
   P("pomidor", "Pomidor", "🍅", "veg", ["tomat"]),
   P("bodring", "Bodring", "🥒", "veg"),
   P("bulgor", "Bulg'or qalampiri", "🫑", "veg", ["bolg'or"]),
-  P("achchiq", "Achchiq qalampir", "🌶️", "veg", ["chili", "jalapeno"]),
-  P("karam", "Karam", "🥬", "veg"),
-  P("zucchini", "Qovoqcha", "🥒", "veg", ["zucchini"]),
+  P("achchiq", "Achchiq qalampir", "🌶️", "veg", ["chili", "jalapeno", "xalapeno"]),
+  P("karam", "Karam", "🥬", "veg", ["savoy karami"]),
+  P("zucchini", "Qovoqcha (zucchini)", "🥒", "veg", ["zucchini", "qovoqcha"]),
+  P("baklajon", "Baklajon", "🍆", "veg"),
   P("lavlagi", "Lavlagi", "🥬", "veg"),
+  P("turp", "Turp (Marg'ilon)", "🥗", "veg", ["marg'ilon turpi"]),
   P("qoziqorin", "Qo'ziqorin", "🍄", "veg", ["shampinyon", "veshenka"]),
+  P("ispanoq", "Ispanoq / Kale", "🥬", "veg", ["kale", "mangold", "xardal barglari"]),
   // 🌿 Ko'kat & Ziravor
-  P("ispanoq", "Ispanoq / Kale", "🥬", "greens", ["kale", "mangold", "xardal barglari"]),
-  P("kashnich", "Kashnich", "🌿", "greens"),
+  P("kashnich", "Kashnich", "🌿", "greens", ["kashnich urug'lari"]),
   P("petrushka", "Petrushka", "🌿", "greens"),
   P("ukrop", "Ukrop", "🌿", "greens"),
-  P("rayhon", "Rayhon", "🌿", "greens", ["basil", "reyhan"]),
+  P("rayhon", "Rayhon (basil)", "🌿", "greens", ["basil", "reyhan"]),
   P("yalpiz", "Yalpiz", "🌿", "greens"),
   P("shivit", "Shivit", "🌿", "greens"),
   P("rozmarin", "Rozmarin", "🌿", "greens"),
@@ -14880,103 +15041,124 @@ export const PRODUCTS: Product[] = [
   P("estragon", "Estragon", "🌿", "greens"),
   P("zira", "Zira", "🟤", "greens"),
   P("koriandr", "Koriandr", "🌱", "greens"),
-  P("kurkuma", "Kurkuma", "🟡", "greens"),
+  P("kurkuma", "Kurkuma", "🟡", "greens", ["zardachub"]),
   P("karri", "Karri", "🍛", "greens"),
-  P("dolchin", "Dolchin", "🍂", "greens", ["dolchin kukuni"]),
+  P("dolchin", "Dolchin", "🍂", "greens"),
+  P("vanil", "Vanil", "🌼", "greens", ["vanilin", "vanil ekstrakti"]),
   P("hil", "Hil (kardamon)", "🌱", "greens", ["kardamon"]),
   P("zanjabil", "Zanjabil", "🫚", "greens"),
-  P("vanil", "Vanil", "🌼", "greens", ["vanil ekstrakti", "vanillin"]),
-  P("tuz", "Tuz", "🧂", "greens"),
+  P("fenxel", "Fenxel", "🌱", "greens", ["fenxel urug'lari"]),
+  P("tuz", "Tuz", "🧂", "greens", ["dengiz tuzi"]),
   P("murch", "Qora murch", "⚫", "greens", ["murch"]),
   // 🥩 Go'sht & Baliq
-  P("mol", "Mol go'shti", "🥩", "meat", ["mol go'shti", "mol tili", "mol jigari"]),
-  P("qoy", "Qo'y go'shti", "🍖", "meat", ["qo'y go'shti", "qovurg'a"]),
-  P("tovuq", "Tovuq", "🍗", "meat"),
+  P("mol", "Mol go'shti", "🥩", "meat", ["mol tili", "mol jigari"]),
+  P("qoy", "Qo'y go'shti", "🍖", "meat", ["qo'y qovurg'asi"]),
+  P("tovuq", "Tovuq", "🍗", "meat", ["tovuq qanotchalari"]),
   P("qiyma", "Qiyma", "🍖", "meat"),
   P("jigar", "Jigar", "🍖", "meat"),
   P("bekon", "Bekon", "🥓", "meat"),
-  P("somon", "Somon (losos)", "🐟", "meat", ["losos", "baliq"]),
   P("qazi", "Qazi", "🍖", "meat"),
+  P("dumba", "Dumba yog'i", "🍖", "meat"),
+  P("somon", "Somon (losos)", "🐟", "meat", ["losos", "baliq"]),
   // 🥛 Sut & Tuxum
-  P("tuxum", "Tuxum", "🥚", "dairy"),
+  P("tuxum", "Tuxum", "🥚", "dairy", ["tuxum sarig'i", "tuxum oqi"]),
   P("sut", "Sut", "🥛", "dairy"),
   P("qaymoq", "Qaymoq", "🍶", "dairy", ["heavy cream"]),
   P("saryog", "Sariyog'", "🧈", "dairy", ["saryog'"]),
-  P("qatiq", "Qatiq / Kefir", "🥛", "dairy", ["kefir", "buttermilk"]),
+  P("qatiq", "Qatiq / Kefir", "🥛", "dairy", ["kefir", "buttermilk", "suzma"]),
   P("smetana", "Smetana", "🥛", "dairy"),
   P("yogurt", "Yogurt", "🥛", "dairy"),
-  P("suzma", "Suzma / Qatiq", "🥛", "dairy"),
-  P("tvorog", "Tvorog / Cream cheese", "🧀", "dairy", ["cream cheese"]),
-  P("pishloq", "Pishloq", "🧀", "dairy", ["motsarella", "cheddar", "xallumi", "parmezan", "feta", "brynza", "echki pishlog'i", "rikotta"]),
+  P("tvorog", "Tvorog / Cream cheese", "🧀", "dairy", ["cream cheese", "panir"]),
+  P("pishloq", "Pishloq", "🧀", "dairy", ["motsarella", "cheddar", "feta", "brynza", "parmezan", "xallumi", "echki pishlog'i", "rikotta", "pishlog'i"]),
   P("muzqaymoq", "Muzqaymoq", "🍨", "dairy"),
   P("kondensat", "Quyultirilgan sut", "🥫", "dairy", ["quyultirilgan sut", "sgushchenka", "kondensirovannoye"]),
   // 🌾 Un & Don
-  P("guruch", "Guruch", "🍚", "grain", ["devzira", "lazer"]),
+  P("guruch", "Guruch", "🍚", "grain", ["devzira", "lazer", "guruch uni"]),
   P("un", "Un", "🌾", "grain", ["bug'doy uni"]),
-  P("javdar", "Javdar uni", "🌾", "grain"),
-  P("suli", "Suli uni / yormasi", "🥣", "grain", ["suli"]),
+  P("javdar", "Javdar uni", "🌾", "grain", ["javdar uni", "grechka uni"]),
+  P("suli", "Suli uni / yormasi", "🥣", "grain", ["suli yormasi"]),
   P("makkoun", "Makkajo'xori uni", "🌽", "grain", ["cornmeal"]),
-  P("kraxmal", "Kraxmal", "🥣", "grain"),
+  P("kraxmal", "Kraxmal", "🥣", "grain", ["kartoshka kraxmali"]),
   P("manna", "Manna yarmasi", "🥣", "grain", ["manka"]),
-  P("makaron", "Makaron / Spagetti", "🍝", "grain", ["spagetti", "pasta"]),
+  P("makaron", "Makaron / Spagetti", "🍝", "grain", ["spagetti", "pasta", "maron"]),
+  P("ugra", "Ugra", "🍜", "grain", ["uy ugrasi"]),
+  P("lagmon", "Lag'mon ugrasi", "🍜", "grain", ["lag'mon"]),
   P("xamirturush", "Xamirturush", "🫧", "grain", ["drojji", "sourdough", "hamirturush"]),
-  P("kreker", "Kreker", "🍪", "grain", ["grek krekeri"]),
-  P("non", "Non / Muffin", "🍞", "grain", ["muffin"]),
-  P("nohot", "Nohut", "🫘", "grain", ["noxat", "nohot"]),
-  P("lobiya", "Lobiya", "🫘", "grain", ["loviya", "qora lobiya"]),
-  P("kinoa", "Kinoa / Yarma", "🥣", "grain", ["kinoa", "yarma", "farro", "bulg'or"]),
+  P("kreker", "Kreker", "🍪", "grain", ["grek krekeri", "perezel"]),
+  P("non", "Non / Muffin", "🍞", "grain", ["muffin", "inglizcha muffin"]),
+  P("kinoa", "Kinoa / Yarma", "🥣", "grain", ["kinoa", "yarma", "farro"]),
+  P("grechka", "Grechka", "🥣", "grain", ["grechka uni"]),
+  P("bulgur", "Bulg'or (bulgur)", "🌾", "grain", ["bulgur"]),
+  P("nohot", "Nohut", "🫘", "grain", ["noxat", "nohot dukkagi"]),
+  P("lobiya", "Lobiya", "🫘", "grain", ["qora lobiya", "loviya"]),
   // 🍎 Mevalar
-  P("olma", "Olma", "🍎", "fruit"),
-  P("limon", "Limon", "🍋", "fruit"),
-  P("laym", "Laym", "🍋", "fruit"),
-  P("apelsin", "Apelsin", "🍊", "fruit"),
-  P("greypfrut", "Greypfrut", "🍊", "fruit"),
-  P("banan", "Banan", "🍌", "fruit"),
-  P("qulupnay", "Qulupnay", "🍓", "fruit"),
-  P("chernika", "Chernika", "🫐", "fruit", ["smorodina"]),
-  P("mango", "Mango", "🥭", "fruit"),
-  P("ananas", "Ananas", "🍍", "fruit"),
-  P("tarvuz", "Tarvuz", "🍉", "fruit"),
-  P("qovun", "Qovun", "🍈", "fruit"),
+  P("olma", "Olma", "🍎", "fruit", ["olmali sous", "applesauce"]),
+  P("nok", "Nok", "🍐", "fruit"),
   P("shaftoli", "Shaftoli", "🍑", "fruit"),
   P("orik", "O'rik", "🍑", "fruit"),
   P("olxori", "Olxori", "🍇", "fruit"),
-  P("mayiz", "Mayiz", "🍇", "fruit"),
-  P("xurmo", "Xurmo (unab)", "🌰", "fruit", ["unab", "xurmo"]),
+  P("uzum", "Uzum", "🍇", "fruit"),
+  P("banan", "Banan", "🍌", "fruit"),
+  P("mango", "Mango", "🥭", "fruit", ["gvayava", "papaya"]),
+  P("ananas", "Ananas", "🍍", "fruit"),
+  P("tarvuz", "Tarvuz", "🍉", "fruit"),
+  P("qovun", "Qovun", "🍈", "fruit"),
+  P("apelsin", "Apelsin", "🍊", "fruit"),
+  P("limon", "Limon", "🍋", "fruit", ["limon sharbati", "limon rendasi"]),
+  P("laym", "Laym", "🍋", "fruit", ["laym sharbati"]),
+  P("greypfrut", "Greypfrut", "🍊", "fruit"),
+  P("qulupnay", "Qulupnay", "🍓", "fruit"),
+  P("chernika", "Chernika", "🫐", "fruit", ["smorodina"]),
   P("anor", "Anor", "🔴", "fruit"),
-  P("nok", "Nok", "🍐", "fruit"),
+  P("xurmo", "Xurmo (unab)", "🌰", "fruit", ["unab", "medjool"]),
+  P("mayiz", "Mayiz", "🍇", "fruit"),
   P("avokado", "Avokado", "🥑", "fruit"),
   // 🥜 Yong'oq & Urug'
   P("yongoq", "Yong'oq", "🌰", "nuts", ["gretskiy", "pekan"]),
-  P("bodom", "Bodom", "🌰", "nuts"),
-  P("funduk", "Funduk", "🌰", "nuts"),
+  P("bodom", "Bodom", "🌰", "nuts", ["bodom uni", "bodom pastasi"]),
+  P("funduk", "Funduk", "🌰", "nuts", ["findiq"]),
   P("pista", "Pista", "🥜", "nuts"),
-  P("yeryongoq", "Yer-yong'oq", "🥜", "nuts", ["peanut"]),
-  P("kunchut", "Kunchut", "⚪", "nuts", ["sezam", "taxini"]),
+  P("yeryongoq", "Yer-yong'oq", "🥜", "nuts", ["peanut", "yer-yong'oq pastasi"]),
+  P("kunchut", "Kunchut", "⚪", "nuts", ["sezam", "taxini", "kunchut yog'i"]),
   P("qovoqurug", "Qovoq urug'i", "🎃", "nuts", ["pepitas"]),
+  P("chia", "Chia / Zig'ir urug'i", "🫘", "nuts", ["zig'ir urug'i", "flaxseed"]),
   P("kokos", "Kokos", "🥥", "nuts", ["kokos qiyg'ichi"]),
-  // 🫒 Yog' & Souslar
+  // 🫒 Yog', Sous & Qo'shimcha
   P("osyog", "O'simlik yog'i", "🫒", "pantry", ["o'simlik yog'i", "paxta yog'i"]),
   P("zaytun", "Zaytun yog'i", "🫒", "pantry"),
   P("kokosyog", "Kokos yog'i / suti", "🥥", "pantry", ["kokos suti", "kokos yog'i"]),
-  P("soya", "Soya sousi", "🍶", "pantry", ["soya sousi", "soyali"]),
-  P("sirka", "Sirka", "🍶", "pantry", ["olma sirkasi", "guruch sirkasi", "sirka"]),
-  P("tomat", "Tomat pastasi", "🥫", "pantry", ["tomat pastasi", "pomidor pastasi", "djem"]),
-  P("asal", "Asal", "🍯", "pantry"),
-  P("shakar", "Shakar", "🍬", "pantry"),
-  P("jshakar", "Jigarrang shakar", "🍬", "pantry", ["jigarrang shakar"]),
-  P("pudra", "Shakar kukuni", "🍬", "pantry", ["shakar kukuni", "pudra"]),
-  P("kakao", "Kakao", "🍫", "pantry"),
-  P("shokolad", "Shokolad", "🍫", "pantry"),
-  P("qahva", "Qahva", "☕", "pantry", ["espresso"]),
-  P("matcha", "Matcha choy", "🍵", "pantry", ["choy"]),
+  P("soya", "Soya sousi", "🍶", "pantry", ["soyali sous"]),
+  P("sirka", "Sirka", "🍶", "pantry", ["olma sirkasi", "guruch sirkasi", "oq sirka"]),
+  P("tomatpasta", "Tomat pastasi", "🥫", "pantry", ["pomidor pastasi"]),
+  P("tomatsous", "Tomat sousi", "🍅", "pantry", ["ketchup sousi"]),
+  P("ketchup", "Ketchup", "🍅", "pantry"),
   P("mayonez", "Mayonez", "🥫", "pantry"),
   P("xardal", "Xardal", "🟡", "pantry", ["dijon"]),
-  P("kimchi", "Kimchi", "🥬", "pantry"),
+  P("adjika", "Adjika / Achchiq sous", "🌶️", "pantry", ["hot sauce", "achchiq sous"]),
+  P("asal", "Asal", "🍯", "pantry", ["klyon siropi", "agava siropi", "xurmo qiyomi"]),
+  P("shakar", "Shakar", "🍬", "pantry"),
+  P("jshakar", "Jigarrang shakar", "🍬", "pantry", ["jigarrang shakar"]),
+  P("pudra", "Shakar kukuni", "🍬", "pantry", ["pudra"]),
+  P("kakao", "Kakao", "🍫", "pantry"),
+  P("shokolad", "Shokolad", "🍫", "pantry", ["achchiq shokolad"]),
+  P("qahva", "Qahva", "☕", "pantry", ["espresso"]),
+  P("choy", "Choy", "🍵", "pantry", ["qora choy"]),
+  P("matcha", "Matcha choy", "🍵", "pantry", ["matcha"]),
+  P("kimchi", "Kimchi", "🥬", "pantry", ["kimchi suvi"]),
+  P("suv", "Mineral / Gazlangan suv", "💧", "pantry", ["gazlangan suv", "mineral suv", "club soda"]),
+  P("soda", "Pishirish sodasi", "🧂", "pantry", ["baking soda", "soda"]),
+  P("gulob", "Gulob (rose water)", "🌹", "pantry", ["rose water"]),
 ];
 
+export const PRODUCT_CATEGORIES = DEFAULT_CATEGORIES;
+export const PRODUCTS = DEFAULT_PRODUCTS;
+
 export function getProduct(key: string): Product | undefined {
-  return PRODUCTS.find((p) => p.key === key);
+  return DEFAULT_PRODUCTS.find((p) => p.key === key);
+}
+
+export function findProduct(products: Product[], key: string): Product | undefined {
+  return products.find((p) => p.key === key);
 }
 
 `
@@ -15844,8 +16026,9 @@ export default function HomePage() {
       ) : null}
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-display text-base font-extrabold text-slate-900">
+        <div className="flex items-center justify-between border-t border-slate-200/70 pt-4">
+          <h3 className="flex items-center gap-2 font-display text-base font-extrabold text-slate-900">
+            <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-pink-100 text-base">🍳</span>
             {format("Kunlik retseptlar")}
           </h3>
           <button onClick={() => setActiveTab("recipes")} className="text-xs font-bold text-[#DB2777]">
@@ -15878,8 +16061,9 @@ export default function HomePage() {
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-display text-base font-extrabold text-slate-900">
+        <div className="flex items-center justify-between border-t border-slate-200/70 pt-4">
+          <h3 className="flex items-center gap-2 font-display text-base font-extrabold text-slate-900">
+            <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-amber-100 text-base">💡</span>
             {format("Kunlik lifehacklar")}
           </h3>
           <button onClick={() => setActiveTab("lifehacks")} className="text-xs font-bold text-[#DB2777]">
@@ -16060,21 +16244,14 @@ export default function LifehacksPage() {
 ## 📄 webapp/src/pages/ProfilePage.tsx
 
 `typescript
+import { Crown, Heart, Info, Settings, ShoppingBag, Trash2 } from "lucide-react";
 import { useMemo } from "react";
-import { Crown, Heart, Settings, ShoppingBag } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { useSession } from "../hooks/useSession";
+import { hapticNotification } from "../lib/telegram";
 
 export default function ProfilePage() {
-  const {
-    favorites,
-    format,
-    openModal,
-    shoppingCount,
-    t,
-    user,
-  } = useApp();
-
+  const { favorites, format, openModal, script, setScript, shoppingCount, t, user } = useApp();
   const { session, isAdmin, isPremium } = useSession();
 
   const currentUser = useMemo(() => {
@@ -16093,109 +16270,129 @@ export default function ProfilePage() {
 
   const showAdminButton = isAdmin || currentUser.id === 8544023815;
 
+  const premiumUntil = session?.user?.premium_until ? new Date(session.user.premium_until) : null;
+  const daysLeft = premiumUntil ? Math.max(0, Math.ceil((premiumUntil.getTime() - Date.now()) / 86400000)) : 0;
+
+  const clearCache = () => {
+    try {
+      sessionStorage.clear();
+    } catch {}
+    hapticNotification("success");
+    window.location.reload();
+  };
+
   return (
     <div className="space-y-4">
+      {/* Profil kartasi */}
       <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-4">
           {currentUser.photoUrl ? (
-            <img
-              src={currentUser.photoUrl}
-              alt={currentUser.firstName}
-              className="h-16 w-16 rounded-full object-cover ring-2 ring-[#DB2777]/20"
-            />
+            <img src={currentUser.photoUrl} alt={currentUser.firstName} className="h-16 w-16 rounded-full object-cover ring-2 ring-[#DB2777]/20" />
           ) : (
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-pink-500 to-rose-400 font-display text-2xl font-extrabold text-white">
               {currentUser.firstName?.[0] ?? "?"}
             </div>
           )}
-
           <div>
-            <h2 className="font-display text-lg font-bold text-slate-900">
-              {currentUser.firstName} {currentUser.lastName ?? ""}
-            </h2>
-
-            {currentUser.username ? (
-              <p className="text-xs font-semibold text-slate-400">
-                @{currentUser.username}
-              </p>
-            ) : null}
-
+            <h2 className="font-display text-lg font-bold text-slate-900">{currentUser.firstName} {currentUser.lastName ?? ""}</h2>
+            {currentUser.username ? <p className="text-xs font-semibold text-slate-400">@{currentUser.username}</p> : null}
             <div className="mt-1 flex items-center gap-2">
-              {isPremium || isAdmin || currentUser.id === 8544023815 ? (
+              {isPremium || showAdminButton ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#DB2777]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#DB2777]">
-                  <Crown size={12} />
-                  {t("premiumBadge")}
+                  <Crown size={12} /> {t("premiumBadge")}
                 </span>
               ) : (
-                <span className="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-500">
-                  Free
-                </span>
+                <span className="inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-500">Free</span>
               )}
-
               {showAdminButton ? (
-                <span className="inline-block rounded-full bg-slate-900 px-2.5 py-0.5 text-[10px] font-bold text-white">
-                  Admin
-                </span>
+                <span className="inline-block rounded-full bg-slate-900 px-2.5 py-0.5 text-[10px] font-bold text-white">Admin</span>
               ) : null}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-rose-500">
-            <Heart size={18} />
-            <h3 className="text-xs font-bold">{t("favorite")}</h3>
-          </div>
-          <p className="mt-3 font-display text-2xl font-extrabold text-slate-900">
-            {favorites.length}
-          </p>
+      {/* ✅ Premium holati */}
+      <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-2 text-[#DB2777]">
+          <Crown size={18} />
+          <h3 className="text-xs font-bold">{format("Premium obuna")}</h3>
         </div>
-
-        <button
-          onClick={() => openModal("bozorlik")}
-          className="rounded-3xl border border-slate-100 bg-white p-4 text-left shadow-sm"
-        >
-          <div className="flex items-center gap-2 text-emerald-600">
-            <ShoppingBag size={18} />
-            <h3 className="text-xs font-bold">{t("bozorlik")}</h3>
+        {isPremium && premiumUntil ? (
+          <div className="mt-3 rounded-2xl bg-emerald-50 p-3">
+            <p className="text-sm font-extrabold text-emerald-700">✅ {format("Faol")}</p>
+            <p className="mt-1 text-xs font-semibold text-emerald-600">
+              {format("Tugash sanasi")}: {premiumUntil.toLocaleDateString()} • {daysLeft} {format("kun qoldi")}
+            </p>
           </div>
-          <p className="mt-3 font-display text-2xl font-extrabold text-slate-900">
-            {shoppingCount}
-          </p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-slate-500">{format("Oddiy rejim. Premium obuna bilan barcha funksiyalardan cheksiz foydalaning.")}</p>
+            <button onClick={() => openModal("premium")} className="h-11 w-full rounded-2xl bg-[#DB2777] text-xs font-extrabold text-white shadow-md">
+              {format("💎 Premiumga o'tish (25 000 so'm)")}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Statistika va tugmalar */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex items-center gap-3 rounded-3xl border border-slate-100 bg-white p-4 text-left shadow-sm">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-pink-50 text-[#DB2777]">
+            <Heart size={20} />
+          </span>
+          <div>
+            <p className="text-xs font-bold text-slate-400">{format("Saqlanganlar")}</p>
+            <p className="font-display text-lg font-extrabold text-slate-900">{favorites.length}</p>
+          </div>
+        </div>
+        <button onClick={() => openModal("bozorlik")} className="flex items-center gap-3 rounded-3xl border border-slate-100 bg-white p-4 text-left shadow-sm">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
+            <ShoppingBag size={20} />
+          </span>
+          <div>
+            <p className="text-xs font-bold text-slate-400">{format("Bozorlik ro'yxati")}</p>
+            <p className="font-display text-lg font-extrabold text-slate-900">{shoppingCount}</p>
+          </div>
         </button>
       </div>
 
-      <div className="space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
-        {!isPremium && !showAdminButton ? (
-          <button
-            onClick={() => openModal("premium")}
-            className="flex w-full items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 p-3.5 text-white"
-          >
-            <div className="flex items-center gap-3">
-              <Crown size={20} />
-              <span className="text-sm font-extrabold">
-                {format("Premium olish")}
-              </span>
-            </div>
-            <span className="rounded-full bg-white/20 px-2.5 py-1 text-[10px] font-bold">
-              25 000 so'm
-            </span>
-          </button>
-        ) : null}
+      {/* Sozlamalar & Alifbo */}
+      <div className="space-y-3 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-2 text-slate-800">
+          <Settings size={18} />
+          <h3 className="text-xs font-bold">{format("Sozlamalar")}</h3>
+        </div>
 
-        {showAdminButton ? (
-          <button
-            onClick={() => openModal("admin")}
-            className="flex w-full items-center gap-3 rounded-2xl bg-slate-900 p-3.5 text-white"
-          >
-            <Settings size={20} />
-            <span className="text-sm font-extrabold">
-              {format("Admin panel")}
-            </span>
+        <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+          <span className="text-xs font-semibold text-slate-600">{format("Yozuv alifbosi")}</span>
+          <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+            <button onClick={() => setScript("latn")} className={`rounded-xl px-3 py-1 text-xs font-bold ${script === "latn" ? "bg-white text-[#DB2777] shadow-sm" : "text-slate-500"}`}>
+              Lotin
+            </button>
+            <button onClick={() => setScript("kyr")} className={`rounded-xl px-3 py-1 text-xs font-bold ${script === "kyr" ? "bg-white text-[#DB2777] shadow-sm" : "text-slate-500"}`}>
+              Кирилл
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+          <span className="text-xs font-semibold text-slate-600">{format("Keshni tozalash")}</span>
+          <button onClick={clearCache} className="flex items-center gap-1 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+            <Trash2 size={13} /> {format("Tozalash")}
           </button>
-        ) : null}
+        </div>
+      </div>
+
+      {/* Admin tugmasi */}
+      {showAdminButton ? (
+        <button onClick={() => openModal("admin")} className="h-12 w-full rounded-2xl bg-slate-900 text-xs font-extrabold text-white shadow-md">
+          🛠 {format("Admin panelni ochish")}
+        </button>
+      ) : null}
+
+      <div className="flex items-center justify-center gap-1 text-center text-xs font-semibold text-slate-400">
+        <Info size={13} /> Pazanda AI v1.2.0 • WebApp
       </div>
     </div>
   );
@@ -16208,17 +16405,16 @@ export default function ProfilePage() {
 ## 📄 webapp/src/pages/RecipesPage.tsx
 
 `typescript
-import { ChevronLeft, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-import { fetchLifehacks } from "../api/lifehacks";
 import { fetchRecipes } from "../api/recipes";
-import LifehackModal from "../components/modals/LifehackModal";
 import RecipeCard from "../components/recipes/RecipeCard";
 import RecipeModal from "../components/recipes/RecipeModal";
 import SmartMatchPanel from "../components/recipes/SmartMatchPanel";
 import GlobalSearch from "../components/search/GlobalSearch";
 import { useApp } from "../context/AppContext";
+import { fetchLifehacks } from "../api/lifehacks";
 import { getDifficultyKey } from "../lib/recipe-utils";
 import { fuzzyFilter } from "../lib/search";
 import { toLat } from "../lib/translit";
@@ -16272,22 +16468,16 @@ export default function RecipesPage() {
   const [maxTime, setMaxTime] = useState<number | null>(null);
   const [difficulty, setDifficulty] = useState<DifficultyKey | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
-  const [selectedLifehack, setSelectedLifehack] = useState<Lifehack | null>(null);
 
   useEffect(() => {
     fetchRecipes().then(setRecipes).catch(() => {}).finally(() => setLoading(false));
     fetchLifehacks().then(setLifehacks).catch(() => {});
-    fetch(`${API_BASE}/api/category-images`)
-      .then((r) => r.json())
-      .then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); })
-      .catch(() => {});
+    fetch(`${API_BASE}/api/category-images`).then((r) => r.json()).then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); }).catch(() => {});
   }, []);
 
   const categories = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of recipes) {
-      if (r.category) map.set(r.category, (map.get(r.category) ?? 0) + 1);
-    }
+    for (const r of recipes) if (r.category) map.set(r.category, (map.get(r.category) ?? 0) + 1);
     return Array.from(map.entries());
   }, [recipes]);
 
@@ -16299,9 +16489,7 @@ export default function RecipesPage() {
   }, [recipes, selectedCategory, maxTime, difficulty]);
 
   const searchResults = useMemo(
-    () => (appliedQuery
-      ? fuzzyFilter(recipes, appliedQuery, (r) => [r.title, r.category, r.description].filter(Boolean).join(" "))
-      : []),
+    () => (appliedQuery ? fuzzyFilter(recipes, appliedQuery, (r) => [r.title, r.category, r.description].filter(Boolean).join(" ")) : []),
     [appliedQuery, recipes],
   );
 
@@ -16318,27 +16506,22 @@ export default function RecipesPage() {
 
   return (
     <div className="space-y-4">
-      {/* ✅ Qidiruv — natijalar tagida dropdown */}
-      <GlobalSearch
-        recipes={recipes}
-        lifehacks={lifehacks}
-        onOpenRecipe={setSelectedRecipe}
-        onOpenLifehack={setSelectedLifehack}
-        onSubmit={(q) => { setAppliedQuery(q); setSelectedCategory(null); }}
-      />
+      {/* ✅ FAQAT katalog rejimida umumiy qidiruv */}
+      {mode === "catalog" ? (
+        <GlobalSearch
+          recipes={recipes}
+          lifehacks={lifehacks}
+          onOpenRecipe={setSelectedRecipe}
+          onOpenLifehack={() => {}}
+          onSubmit={(q) => { setAppliedQuery(q); setSelectedCategory(null); }}
+        />
+      ) : null}
 
-      {/* Rejim toggle */}
       <div className="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100 p-1.5">
-        <button
-          onClick={() => setMode("catalog")}
-          className={cn("rounded-2xl px-3 py-2.5 text-sm font-bold", mode === "catalog" ? "bg-white text-[#DB2777] shadow" : "text-slate-500")}
-        >
+        <button onClick={() => setMode("catalog")} className={cn("rounded-2xl px-3 py-2.5 text-sm font-bold", mode === "catalog" ? "bg-white text-[#DB2777] shadow" : "text-slate-500")}>
           {t("catalog")}
         </button>
-        <button
-          onClick={() => setMode("match")}
-          className={cn("rounded-2xl px-3 py-2.5 text-sm font-bold", mode === "match" ? "bg-white text-[#DB2777] shadow" : "text-slate-500")}
-        >
+        <button onClick={() => setMode("match")} className={cn("rounded-2xl px-3 py-2.5 text-sm font-bold", mode === "match" ? "bg-white text-[#DB2777] shadow" : "text-slate-500")}>
           {t("aiMatch")}
         </button>
       </div>
@@ -16346,20 +16529,13 @@ export default function RecipesPage() {
       {mode === "match" ? (
         <SmartMatchPanel recipes={recipes} onOpenRecipe={setSelectedRecipe} />
       ) : appliedQuery ? (
-        /* Enter bosilganda — fuzzy natijalar */
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-display text-sm font-extrabold text-slate-900">
-              {format("Natijalar")}: "{appliedQuery}"
-            </h3>
-            <button onClick={() => setAppliedQuery("")} className="text-xs font-bold text-[#DB2777]">
-              {t("matchClear")}
-            </button>
+            <h3 className="text-sm font-extrabold text-slate-900">{format("Natijalar")}: "{appliedQuery}"</h3>
+            <button onClick={() => setAppliedQuery("")} className="text-xs font-bold text-[#DB2777]">{t("matchClear")}</button>
           </div>
           {searchResults.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              {t("noRecipes")}
-            </div>
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{t("noRecipes")}</div>
           ) : (
             <div className="grid grid-cols-2 items-stretch gap-3">
               {searchResults.map((r) => <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipe} />)}
@@ -16367,46 +16543,44 @@ export default function RecipesPage() {
           )}
         </section>
       ) : selectedCategory ? (
-        /* Kategoriya ichida */
         <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSelectedCategory(null)}
-              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm"
-            >
+            <button onClick={() => setSelectedCategory(null)} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm">
               <ChevronLeft size={18} />
             </button>
             <span className="text-xl">{getCategoryEmoji(selectedCategory)}</span>
-            <h2 className="font-display text-base font-extrabold text-slate-900">{format(selectedCategory)}</h2>
+            <h2 className="line-clamp-1 font-display text-base font-extrabold text-slate-900">{format(selectedCategory)}</h2>
           </div>
 
-          {/* Kompakt filtrlar */}
-          <div className="flex flex-wrap items-center gap-2">
-            <SlidersHorizontal size={14} className="text-slate-400" />
-            {[null, 15, 30, 60].map((time) => (
-              <button
-                key={String(time)}
-                onClick={() => setMaxTime(time)}
-                className={cn("rounded-full px-3 py-1.5 text-[11px] font-bold", maxTime === time ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}
-              >
-                {time === null ? t("all") : `≤ ${time} ${t("minutes")}`}
+          {/* ✅ Chiroyli ixcham filtr kartasi */}
+          <div className="space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
+            <div className="no-scrollbar flex items-center gap-2 overflow-x-auto">
+              <span className="shrink-0 text-[11px] font-extrabold text-slate-400">⏱ {t("time")}</span>
+              {([null, 15, 30, 60] as (number | null)[]).map((time) => (
+                <button key={String(time)} onClick={() => setMaxTime(time)}
+                  className={cn("shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold", maxTime === time ? "bg-slate-900 text-white" : "bg-slate-50 text-slate-500")}>
+                  {time === null ? t("all") : `≤ ${time}′`}
+                </button>
+              ))}
+            </div>
+            <div className="no-scrollbar flex items-center gap-2 overflow-x-auto">
+              <span className="shrink-0 text-[11px] font-extrabold text-slate-400">🎚 {t("difficulty")}</span>
+              {([null, "easy", "medium", "hard"] as (DifficultyKey | null)[]).map((d) => (
+                <button key={String(d)} onClick={() => setDifficulty(d)}
+                  className={cn("shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold", difficulty === d ? "bg-amber-400 text-slate-900" : "bg-slate-50 text-slate-500")}>
+                  {d === null ? t("all") : t(d)}
+                </button>
+              ))}
+            </div>
+            {maxTime || difficulty ? (
+              <button onClick={() => { setMaxTime(null); setDifficulty(null); }} className="flex items-center gap-1 text-[11px] font-bold text-[#DB2777]">
+                <X size={12} /> {t("matchClear")}
               </button>
-            ))}
-            {([null, "easy", "medium", "hard"] as (DifficultyKey | null)[]).map((d) => (
-              <button
-                key={String(d)}
-                onClick={() => setDifficulty(d)}
-                className={cn("rounded-full px-3 py-1.5 text-[11px] font-bold", difficulty === d ? "bg-amber-400 text-slate-900" : "bg-white text-slate-500 shadow-sm")}
-              >
-                {d === null ? t("all") : t(d)}
-              </button>
-            ))}
+            ) : null}
           </div>
 
           {inCategory.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              {t("noRecipes")}
-            </div>
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{t("noRecipes")}</div>
           ) : (
             <div className="grid grid-cols-2 items-stretch gap-3">
               {inCategory.map((r) => <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipe} />)}
@@ -16414,30 +16588,24 @@ export default function RecipesPage() {
           )}
         </section>
       ) : (
-        /* ✅ Papkalar (lifehacks kabi) */
         <section className="space-y-3">
           <h2 className="font-display text-base font-extrabold text-slate-900">{format("Kategoriyalar")}</h2>
           <div className="grid grid-cols-2 gap-3">
             {categories.map(([cat, count], idx) => (
-              <motion.button
-                key={cat}
-                whileTap={{ scale: 0.96 }}
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.04 }}
+              <motion.button key={cat} whileTap={{ scale: 0.96 }} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }}
                 onClick={() => setSelectedCategory(cat)}
-                className="overflow-hidden rounded-3xl border border-slate-100 bg-white text-left shadow-sm"
-              >
+                className="overflow-hidden rounded-3xl border border-slate-100 bg-white text-left shadow-sm">
                 <div className={`relative h-20 w-full bg-gradient-to-br ${FOLDER_GRADIENTS[idx % FOLDER_GRADIENTS.length]}`}>
                   {categoryImages[cat] ? (
                     <img src={categoryImages[cat]} alt={format(cat)} loading="lazy" className="h-full w-full object-cover" />
                   ) : (
                     <span className="flex h-full w-full items-center justify-center text-3xl">{getCategoryEmoji(cat)}</span>
                   )}
+                  <span className="absolute right-2 top-2 rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-extrabold text-slate-600">{count}</span>
                 </div>
                 <div className="p-3">
-                  <h3 className="line-clamp-1 font-display text-sm font-bold text-slate-900">{format(cat)}</h3>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">{count} {t("countSuffix")}</p>
+                  {/* ✅ 2 qator — kirill/lotin sig'adi */}
+                  <h3 className="line-clamp-2 min-h-[32px] text-[13px] font-bold leading-4 text-slate-900">{format(cat)}</h3>
                 </div>
               </motion.button>
             ))}
@@ -16446,7 +16614,6 @@ export default function RecipesPage() {
       )}
 
       <RecipeModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} />
-      <LifehackModal lifehack={selectedLifehack} onClose={() => setSelectedLifehack(null)} />
     </div>
   );
 }

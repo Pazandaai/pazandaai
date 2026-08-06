@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchLifehacks, getLifehackCategories } from "../api/lifehacks";
 import LifehackCard from "../components/lifehacks/LifehackCard";
 import { useApp } from "../context/AppContext";
+import { registerBack } from "../lib/back";
 import { getCategoryEmoji, normalizeText } from "../lib/lifehack-utils";
-import { hideBackButton, onBackButton, showBackButton } from "../lib/telegram";
+import { hideBackButton, showBackButton } from "../lib/telegram";
 import type { Lifehack } from "../types/lifehack";
 
 const FOLDER_GRADIENTS = [
@@ -31,11 +32,20 @@ export default function LifehacksPage() {
   useEffect(() => {
     if (selectedCategory) {
       showBackButton();
-      const off = onBackButton(() => setSelectedCategory(null));
-      return () => { off(); hideBackButton(); };
+      return () => hideBackButton();
     }
     hideBackButton();
     return undefined;
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    return registerBack(() => {
+      if (selectedCategory) {
+        setSelectedCategory(null);
+        return true;
+      }
+      return false;
+    }, 50);
   }, [selectedCategory]);
 
   const categories = useMemo(() => getLifehackCategories(lifehacks), [lifehacks]);

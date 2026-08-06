@@ -141,6 +141,10 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
             alt={format(recipe.title)}
             className="h-52 rounded-3xl bg-slate-100"
           />
+        ) : recipe.emoji ? (
+          <div className="flex h-36 w-full items-center justify-center rounded-3xl bg-pink-50 text-6xl">
+            {recipe.emoji}
+          </div>
         ) : null}
 
         {recipe.description ? (

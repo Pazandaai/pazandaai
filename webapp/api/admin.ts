@@ -198,6 +198,21 @@ export default async function handler(
         return res.status(200).json({ ok: true, data: data?.[0] ?? null });
       }
 
+      case "extend_premium": {
+        const targetId = payload?.telegram_id;
+        const days = payload?.days ?? 30;
+        if (!targetId) return res.status(400).json({ ok: false, error: "telegram_id required" });
+        const rows = await supabaseFetch("GET", "users", { telegram_id: `eq.${targetId}`, limit: 1 });
+        const u = rows?.[0];
+        const base = u?.premium_until && new Date(u.premium_until) > new Date()
+          ? new Date(u.premium_until)
+          : new Date();
+        base.setDate(base.getDate() + days);
+        await supabaseFetch("PATCH", "users", { telegram_id: `eq.${targetId}` },
+          { is_premium: true, premium_until: base.toISOString() }, "return=representation");
+        return res.status(200).json({ ok: true, until: base.toISOString() });
+      }
+
       case "list_payments": {
         const status = payload?.status ?? "pending";
         const data = await supabaseFetch("GET", "premium_requests", {

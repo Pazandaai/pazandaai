@@ -34,6 +34,7 @@ export interface Recipe {
   title: string;
   description?: string;
   image_url?: string;
+  emoji?: string | null;
   cook_time_minutes?: number | null;
   difficulty?: string | null;
   servings?: number;

@@ -8,6 +8,10 @@ export const API_BASE = (
     : "")
 ).replace(/\/$/, "");
 
+export function tgHeaders(): Record<string, string> {
+  return { "x-init-data": getInitData() };
+}
+
 export interface SessionUser {
   id: number;
   first_name: string;

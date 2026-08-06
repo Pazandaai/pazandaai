@@ -8,6 +8,7 @@ import SmartMatchPanel from "../components/recipes/SmartMatchPanel";
 import GlobalSearch from "../components/search/GlobalSearch";
 import { useApp } from "../context/AppContext";
 import { fetchLifehacks } from "../api/lifehacks";
+import { registerBack } from "../lib/back";
 import { getDifficultyKey } from "../lib/recipe-utils";
 import { fuzzyFilter } from "../lib/search";
 import { toLat } from "../lib/translit";
@@ -67,6 +68,30 @@ export default function RecipesPage() {
     fetchLifehacks().then(setLifehacks).catch(() => {});
     fetch(`${API_BASE}/api/category-images`).then((r) => r.json()).then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    return registerBack(() => {
+      if (selectedRecipe) {
+        setSelectedRecipe(null);
+        return true;
+      }
+      return false;
+    }, 100);
+  }, [selectedRecipe]);
+
+  useEffect(() => {
+    return registerBack(() => {
+      if (appliedQuery) {
+        setAppliedQuery("");
+        return true;
+      }
+      if (selectedCategory) {
+        setSelectedCategory(null);
+        return true;
+      }
+      return false;
+    }, 50);
+  }, [appliedQuery, selectedCategory]);
 
   const categories = useMemo(() => {
     const map = new Map<string, number>();

@@ -1,15 +1,8 @@
 import { supabase } from "../lib/supabase";
 import { parseIngredientEntry } from "../lib/recipe-utils";
 import { cacheGet, cacheSet } from "../lib/cache";
+import { tgHeaders, API_BASE } from "../lib/api";
 import type { Recipe, RecipeStep } from "../types";
-
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" &&
-  window.location.hostname.includes("localhost")
-    ? "https://pazandaai.vercel.app"
-    : "")
-).replace(/\/$/, "");
 
 function parseJsonArray(value: unknown): any[] {
   if (Array.isArray(value)) return value;
@@ -43,6 +36,7 @@ function normalizeRecipe(row: any): Recipe {
     title: row.title ?? "",
     description: row.description ?? undefined,
     image_url: row.image_url ?? undefined,
+    emoji: row.emoji ?? undefined,
     cook_time_minutes: row.cook_time_minutes ?? null,
     difficulty: row.difficulty ?? null,
     servings: row.servings ?? 4,
@@ -62,7 +56,9 @@ export async function fetchRecipes(): Promise<Recipe[]> {
   let rows: any[] = [];
 
   try {
-    const res = await fetch(`${API_BASE}/api/recipes`);
+    const res = await fetch(`${API_BASE}/api/recipes`, {
+      headers: tgHeaders(),
+    });
     if (res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {

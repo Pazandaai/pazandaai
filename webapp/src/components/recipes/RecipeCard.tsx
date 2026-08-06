@@ -37,6 +37,10 @@ export default function RecipeCard({
             loading="lazy"
             className="h-full w-full object-cover"
           />
+        ) : recipe.emoji ? (
+          <div className="flex h-full w-full items-center justify-center text-5xl">
+            {recipe.emoji}
+          </div>
         ) : (
           <div className="flex h-full w-full items-center justify-center text-[#DB2777]/40">
             <ChefHat size={34} />

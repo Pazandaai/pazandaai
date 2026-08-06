@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { useSession } from "../../hooks/useSession";
 import { adminRequest } from "../../lib/api";
+import { registerBack } from "../../lib/back";
 import { DEFAULT_CATEGORIES, DEFAULT_PRODUCTS } from "../../lib/products";
 import ImageUploader from "./ImageUploader";
 
@@ -80,6 +81,13 @@ function AdminInner() {
   const { loading, isAdmin } = useSession();
 
   const isUserAdmin = isAdmin || user.id === 8544023815;
+
+  useEffect(() => {
+    return registerBack(() => {
+      closeModal();
+      return true;
+    }, 100);
+  }, [closeModal]);
 
   const [tab, setTab] = useState<
     "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks" | "cats" | "products"
@@ -243,6 +251,11 @@ function UsersAdmin() {
     load(search || undefined);
   };
 
+  const extendPremium = async (telegramId: number) => {
+    await adminRequest("extend_premium", { telegram_id: telegramId, days: 30 });
+    load(search || undefined);
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
@@ -250,12 +263,12 @@ function UsersAdmin() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") load(search || undefined); }}
-          placeholder={format("ID, username yoki ism qidiring...")}
+          placeholder={format("Search ID / @username / ism...")}
           className="h-11 flex-1 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none"
         />
         <button
           onClick={() => load(search || undefined)}
-          className="h-11 rounded-2xl bg-[#DB2777] px-4 text-sm font-bold text-white"
+          className="h-11 rounded-2xl bg-slate-900 px-4 text-sm font-extrabold text-white"
         >
           🔎
         </button>
@@ -303,10 +316,10 @@ function UsersAdmin() {
 
                   {u.is_premium ? (
                     <button
-                      onClick={() => revokePremium(u.telegram_id)}
-                      className="rounded-xl bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600"
+                      onClick={() => extendPremium(u.telegram_id)}
+                      className="rounded-xl bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-600"
                     >
-                      {format("Premium olish")}
+                      {format("+30 kun uzaytirish")}
                     </button>
                   ) : (
                     <button
@@ -316,6 +329,14 @@ function UsersAdmin() {
                       {format("Premium berish")}
                     </button>
                   )}
+                  {u.is_premium ? (
+                    <button
+                      onClick={() => revokePremium(u.telegram_id)}
+                      className="rounded-xl bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600"
+                    >
+                      {format("Premium olish")}
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -353,8 +374,8 @@ function CardSettings() {
   return (
     <div className="space-y-2 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
       <p className="text-xs font-extrabold text-slate-700">{format("💳 To'lov kartasi (bot va ilovada ko'rinadi)")}</p>
-      <input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} placeholder="8600 0000 0000 0000" className={inputClass} />
-      <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Karta egasi ismi" className={inputClass} />
+      <input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} placeholder="8600 0000 0000 0000" className="h-10 w-full rounded-2xl border border-slate-200 px-3 text-sm outline-none" />
+      <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Karta egasi ismi" className="h-10 w-full rounded-2xl border border-slate-200 px-3 text-sm outline-none" />
       <button onClick={save} className="h-10 w-full rounded-2xl bg-[#DB2777] text-xs font-extrabold text-white">
         {saved ? format("✅ Saqlandi") : format("Saqlash")}
       </button>
@@ -367,73 +388,66 @@ function CardSettings() {
 // =====================
 function PaymentsAdmin() {
   const { format } = useApp();
+  const [status, setStatus] = useState<"pending" | "approved" | "rejected">("pending");
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (st: string) => {
     setLoading(true);
     try {
-      const res = await adminRequest("list_payments", { status: "pending" });
+      const res = await adminRequest("list_payments", { status: st });
       setPayments(res.data ?? []);
     } catch {}
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(status); }, [status, load]);
 
   const approve = async (requestId: string) => {
     await adminRequest("approve_payment", { request_id: requestId });
-    load();
+    load(status);
   };
 
   const reject = async (requestId: string) => {
     await adminRequest("reject_payment", { request_id: requestId });
-    load();
+    load(status);
   };
 
   return (
     <div className="space-y-3">
       <CardSettings />
+      <div className="flex gap-2">
+        {(["pending", "approved", "rejected"] as const).map((st) => (
+          <button key={st} onClick={() => setStatus(st)}
+            className={`flex-1 rounded-2xl px-2 py-2 text-[11px] font-extrabold ${status === st ? "bg-[#DB2777] text-white" : "bg-white text-slate-500 shadow-sm"}`}>
+            {st === "pending" ? format("⏳ Kutilmoqda") : st === "approved" ? format("✅ Tasdiqlangan") : format("❌ Rad etilgan")}
+          </button>
+        ))}
+      </div>
       {loading ? (
         <div className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />
       ) : payments.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          {format("Kutilayotgan to'lovlar yo'q")}
+          {format("So'rovlar yo'q")}
         </div>
       ) : (
         payments.map((p) => (
           <div key={p.id} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
             <div className="flex items-start gap-3">
               {p.screenshot_url ? (
-                <img
-                  src={p.screenshot_url}
-                  alt="screenshot"
-                  className="h-20 w-20 rounded-xl object-cover"
-                />
-              ) : null}
-
+                <img src={p.screenshot_url} alt="check" className="h-20 w-20 rounded-xl object-cover" />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-slate-100 text-2xl">🧾</div>
+              )}
               <div className="flex-1">
-                <p className="text-sm font-bold text-slate-900">
-                  User ID: {p.user_telegram_id}
-                </p>
-                <p className="text-xs text-slate-400">
-                  {new Date(p.created_at).toLocaleString()}
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <button
-                  onClick={() => approve(p.id)}
-                  className="rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-600"
-                >
-                  ✅
-                </button>
-                <button
-                  onClick={() => reject(p.id)}
-                  className="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600"
-                >
-                  ❌
-                </button>
+                <p className="text-sm font-bold text-slate-900">ID: {p.user_telegram_id}</p>
+                <p className="text-xs text-slate-400">{new Date(p.created_at).toLocaleString()}</p>
+                {status === "pending" ? (
+                  <div className="mt-2 flex gap-2">
+                    <button onClick={() => approve(p.id)} className="rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-600">✅</button>
+                    <button onClick={() => reject(p.id)} className="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600">❌</button>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -515,6 +529,7 @@ interface RecipeFormState {
   category: string;
   description: string;
   image_url: string;
+  emoji: string;
   cook_time_minutes: string;
   difficulty: string;
   servings: string;
@@ -528,6 +543,7 @@ const emptyRecipeForm: RecipeFormState = {
   category: "",
   description: "",
   image_url: "",
+  emoji: "",
   cook_time_minutes: "",
   difficulty: "oson",
   servings: "4",
@@ -581,6 +597,7 @@ function RecipesAdmin() {
         category: full.category ?? "",
         description: full.description ?? "",
         image_url: full.image_url ?? "",
+        emoji: full.emoji ?? "",
         cook_time_minutes: String(full.cook_time_minutes ?? ""),
         difficulty: full.difficulty ?? "oson",
         servings: String(full.servings ?? "4"),
@@ -606,6 +623,7 @@ function RecipesAdmin() {
       category: form.category.trim() || null,
       description: form.description.trim() || null,
       image_url: form.image_url.trim() || null,
+      emoji: form.emoji.trim() || null,
       cook_time_minutes: form.cook_time_minutes
         ? Number(form.cook_time_minutes)
         : null,

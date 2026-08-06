@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guardPublic } from "./_lib/guard.js";
 import { supabaseFetch } from "./_lib/supabase.js";
 
 export default async function handler(
@@ -8,6 +9,9 @@ export default async function handler(
   if (req.method !== "GET") {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
+
+  const g = guardPublic(req);
+  if (!g.ok) return res.status(g.status).json({ ok: false, error: g.error });
 
   try {
     const data = await supabaseFetch("GET", "lifehacks", {

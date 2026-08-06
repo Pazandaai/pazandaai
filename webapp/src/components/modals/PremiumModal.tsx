@@ -2,7 +2,7 @@ import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../../context/AppContext";
-import { API_BASE, uploadImage } from "../../lib/api";
+import { API_BASE, tgHeaders, uploadImage } from "../../lib/api";
 import { hapticNotification } from "../../lib/telegram";
 import ModalShell from "../ui/ModalShell";
 
@@ -18,13 +18,24 @@ function PremiumInner() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState<{ card_number?: string; card_holder?: string } | null>(null);
+  const [cardCopied, setCardCopied] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/payment-card`)
+    fetch(`${API_BASE}/api/payment-card`, { headers: tgHeaders() })
       .then((r) => r.json())
       .then((j) => { if (j?.ok && j.value) setCard(j.value); })
       .catch(() => {});
   }, []);
+
+  const copyCard = async () => {
+    if (!card?.card_number) return;
+    try {
+      await navigator.clipboard.writeText(card.card_number);
+      setCardCopied(true);
+      hapticNotification("success");
+      setTimeout(() => setCardCopied(false), 1500);
+    } catch {}
+  };
 
   useEffect(() => {
     return () => {
@@ -90,11 +101,19 @@ function PremiumInner() {
         </div>
 
         {card?.card_number ? (
-          <div className="rounded-3xl bg-slate-900 p-4 text-white shadow-md">
-            <p className="text-[10px] font-bold text-slate-400">{format("To'lov kartasi")}</p>
-            <p className="mt-1 font-mono text-base font-extrabold tracking-wider">{card.card_number}</p>
-            {card.card_holder ? <p className="mt-0.5 text-xs text-slate-300">{card.card_holder}</p> : null}
-          </div>
+          <button
+            onClick={copyCard}
+            className="flex w-full items-center justify-between rounded-3xl bg-slate-900 p-4 text-left shadow-md"
+          >
+            <div>
+              <p className="text-[10px] font-bold text-slate-400">{format("To'lov kartasi (bosib nusxalang)")}</p>
+              <p className="mt-1 font-mono text-base font-extrabold tracking-wider text-white">{card.card_number}</p>
+              {card.card_holder ? <p className="mt-0.5 text-xs text-slate-300">{card.card_holder}</p> : null}
+            </div>
+            <span className="rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white">
+              {cardCopied ? format("✅ Nusxalandi") : format("📋 Nusxalash")}
+            </span>
+          </button>
         ) : null}
 
         <input

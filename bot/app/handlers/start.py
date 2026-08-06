@@ -1,4 +1,5 @@
 import logging
+import time
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
@@ -12,9 +13,34 @@ from app.texts.strings import t
 settings = get_settings()
 router = Router()
 
+START_WINDOW = 120        # 2 daqiqa
+START_MAX = 6             # 6 marta ketma-ket
+START_BLOCK_SECONDS = 4 * 3600  # 4 soat
+
+_start_log: dict[int, list[float]] = {}
+_start_blocked: dict[int, float] = {}
+
+
+def is_start_spam(user_id: int) -> bool:
+    now = time.monotonic()
+    until = _start_blocked.get(user_id)
+    if until and now < until:
+        return True
+    log = [t_item for t_item in _start_log.get(user_id, []) if now - t_item < START_WINDOW]
+    log.append(now)
+    _start_log[user_id] = log
+    if len(log) >= START_MAX:
+        _start_blocked[user_id] = now + START_BLOCK_SECONDS
+        _start_log[user_id] = []
+        return True
+    return False
+
 
 @router.message(CommandStart())
 async def start(message: Message) -> None:
+    if is_start_spam(message.from_user.id):
+        return
+
     try:
         user = await ensure_user(message.from_user)
         language = (user.get("language") if isinstance(user, dict) else None) or "latn"

@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { registerBack } from "../../lib/back";
 
 interface ModalShellProps {
   open: boolean;
@@ -15,6 +16,14 @@ export default function ModalShell({
   onClose,
   children,
 }: ModalShellProps) {
+  useEffect(() => {
+    if (!open) return;
+    return registerBack(() => {
+      onClose();
+      return true;
+    }, 100);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open ? (

@@ -1,14 +1,7 @@
 import { supabase } from "../lib/supabase";
 import { cacheGet, cacheSet } from "../lib/cache";
+import { tgHeaders, API_BASE } from "../lib/api";
 import type { Lifehack } from "../types/lifehack";
-
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" &&
-  window.location.hostname.includes("localhost")
-    ? "https://pazandaai.vercel.app"
-    : "")
-).replace(/\/$/, "");
 
 const MOCK_LIFEHACKS: Lifehack[] = [
   {
@@ -64,7 +57,9 @@ export async function fetchLifehacks(): Promise<Lifehack[]> {
   let rows: any[] = [];
 
   try {
-    const res = await fetch(`${API_BASE}/api/lifehacks`);
+    const res = await fetch(`${API_BASE}/api/lifehacks`, {
+      headers: tgHeaders(),
+    });
     if (res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
