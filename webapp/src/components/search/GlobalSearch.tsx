@@ -45,7 +45,7 @@ export default function GlobalSearch({
   };
 
   return (
-    <div className="relative z-40">
+    <div className="relative z-[60]">
       <div className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm focus-within:border-[#DB2777]/40">
         <Search size={17} className="text-slate-400" />
         <input
@@ -67,7 +67,7 @@ export default function GlobalSearch({
             <button
               key={`r-${r.id}`}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onOpenRecipe(r); setFocused(false); }}
+              onClick={() => { inputRef.current?.blur(); onOpenRecipe(r); setFocused(false); }}
               className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-slate-50"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-pink-50 text-[#DB2777]">
@@ -85,7 +85,7 @@ export default function GlobalSearch({
             <button
               key={`l-${l.id}`}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onOpenLifehack(l); setFocused(false); }}
+              onClick={() => { inputRef.current?.blur(); onOpenLifehack(l); setFocused(false); }}
               className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-slate-50"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">

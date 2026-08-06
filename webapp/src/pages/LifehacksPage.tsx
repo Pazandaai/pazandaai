@@ -93,7 +93,7 @@ export default function LifehacksPage() {
                     {countByCategory.get(cat) ?? 0} {t("countSuffix")}
                   </span>
                 </div>
-                <h3 className="mt-3 line-clamp-1 font-display text-sm font-bold text-slate-800">{format(cat)}</h3>
+                <h3 className="mt-3 line-clamp-2 min-h-[32px] font-display text-[13px] font-bold leading-4 text-slate-800">{format(cat)}</h3>
               </motion.button>
             ))}
           </div>

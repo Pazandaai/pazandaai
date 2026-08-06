@@ -22,11 +22,24 @@ export default function BottomNav() {
 
   // ✅ Klaviatura ochilganda navbar yashirinadi
   useEffect(() => {
+    const onFocus = (e: FocusEvent) => {
+      const t = e.target as HTMLElement;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) setHidden(true);
+    };
+    const onBlur = () => setTimeout(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body || (a.tagName !== "INPUT" && a.tagName !== "TEXTAREA")) setHidden(false);
+    }, 100);
     const vv = window.visualViewport;
-    if (!vv) return;
-    const onResize = () => setHidden(window.innerHeight - vv.height > 180);
-    vv.addEventListener("resize", onResize);
-    return () => vv.removeEventListener("resize", onResize);
+    const onResize = () => { if (vv) setHidden(window.innerHeight - vv.height > 180); };
+    if (vv) vv.addEventListener("resize", onResize);
+    document.addEventListener("focusin", onFocus);
+    document.addEventListener("focusout", onBlur);
+    return () => {
+      if (vv) vv.removeEventListener("resize", onResize);
+      document.removeEventListener("focusin", onFocus);
+      document.removeEventListener("focusout", onBlur);
+    };
   }, []);
 
   return (

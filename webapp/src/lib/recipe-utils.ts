@@ -282,3 +282,27 @@ export function getUniqueIngredients(recipes: Recipe[]): string[] {
   }
   return Array.from(map.values()).sort((a, b) => a.localeCompare(b, "uz"));
 }
+
+const CATEGORY_EMOJIS: Record<string, string> = {
+  "asosiy taom": "🍲",
+  "suyuq taom": "🍜",
+  "quyuq taom": "🥘",
+  salat: "🥗",
+  pishiriq: "🥧",
+  shirinlik: "🍰",
+  ichimlik: "🧃",
+  "yengil tamaddi": "🥪",
+  oshxona: "🍳",
+  "ro'zg'or": "🏠",
+  tejamkorlik: "💡",
+  burchak: "✨",
+};
+
+export function getCategoryEmoji(cat?: string): string {
+  if (!cat) return "🍳";
+  const lower = cat.toLowerCase().trim();
+  for (const [k, v] of Object.entries(CATEGORY_EMOJIS)) {
+    if (lower.includes(k)) return v;
+  }
+  return "🍳";
+}

@@ -1,7 +1,7 @@
-import { ChefHat, Clock3, Heart } from "lucide-react";
+import { Clock3, Heart } from "lucide-react";
 import { motion } from "motion/react";
 import { useApp } from "../../context/AppContext";
-import { getDifficultyKey } from "../../lib/recipe-utils";
+import { getCategoryEmoji, getDifficultyKey } from "../../lib/recipe-utils";
 import { hapticImpact } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Recipe } from "../../types";
@@ -42,8 +42,8 @@ export default function RecipeCard({
             {recipe.emoji}
           </div>
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-[#DB2777]/40">
-            <ChefHat size={34} />
+          <div className="flex h-full w-full items-center justify-center text-5xl">
+            {getCategoryEmoji(recipe.category)}
           </div>
         )}
         {badge ? (
