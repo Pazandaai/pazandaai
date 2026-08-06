@@ -12,6 +12,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
   const { format } = useApp();
   const [index, setIndex] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const touchX = useRef<number | null>(null);
   const count = slides.length;
@@ -30,6 +31,10 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
   }, [count, index]);
 
   const slide = count > 0 ? slides[Math.min(index, count - 1)] : null;
+
+  useEffect(() => {
+    setImgError(false);
+  }, [slide?.id, slide?.image_url]);
 
   useEffect(() => {
     if (imgRef.current && imgRef.current.complete) {
@@ -63,7 +68,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
       onTouchEnd={onTouchEnd}
     >
       <AnimatePresence mode="wait">
-        {slide.image_url ? (
+        {slide.image_url && !imgError ? (
           <motion.img
             ref={imgRef}
             key={slide.id || slide.image_url}
@@ -73,7 +78,11 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
             {...({ fetchpriority: "high" } as any)}
             decoding="async"
             onLoad={() => setImageLoaded(true)}
-            onError={() => setImageLoaded(true)}
+            onError={() => {
+              console.error("[Banner] rasm yuklanmadi:", slide.image_url);
+              setImgError(true);
+              setImageLoaded(true);
+            }}
             initial={{ opacity: 0, scale: 1.03 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
@@ -87,7 +96,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
       </AnimatePresence>
 
       {/* Skeleton background while image loading */}
-      {!imageLoaded && slide.image_url ? (
+      {!imageLoaded && slide.image_url && !imgError ? (
         <div className="absolute inset-0 animate-pulse bg-slate-800/40" />
       ) : null}
 
