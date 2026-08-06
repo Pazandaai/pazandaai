@@ -9303,10 +9303,10 @@ const API_BASE = (
     : "")
 ).replace(/\/$/, "");
 
-// Bo'sh joyli string'larni tozalaydi — " " endi bo'sh hisoblanadi
+// Strips extra quotes and whitespace from strings
 const clean = (v: unknown): string => {
-  if (typeof v === "string") return v.trim();
-  return v ? String(v) : "";
+  if (typeof v === "string") return v.replace(/^['"]|['"]$/g, "").trim();
+  return v ? String(v).trim() : "";
 };
 
 export function normalizeBanner(banner: any): BannerSlide[] {
@@ -11432,7 +11432,6 @@ export default function ImageUploader({
 `typescript
 import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import type { BannerSlide } from "../../api/home";
 import { useApp } from "../../context/AppContext";
 
@@ -11443,9 +11442,7 @@ interface BannerCarouselProps {
 export default function BannerCarousel({ slides }: BannerCarouselProps) {
   const { format } = useApp();
   const [index, setIndex] = useState(0);
-  const [imageLoaded, setImageLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
-  const imgRef = useRef<HTMLImageElement>(null);
   const touchX = useRef<number | null>(null);
   const count = slides.length;
 
@@ -11453,7 +11450,6 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
     if (count <= 1) return;
     const id = setInterval(() => {
       setIndex((prev) => (prev + 1) % count);
-      setImageLoaded(false);
     }, 5000);
     return () => clearInterval(id);
   }, [count]);
@@ -11467,12 +11463,6 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
   useEffect(() => {
     setImgError(false);
   }, [slide?.id, slide?.image_url]);
-
-  useEffect(() => {
-    if (imgRef.current && imgRef.current.complete) {
-      setImageLoaded(true);
-    }
-  }, [slide?.image_url]);
 
   if (!slide) return null;
 
@@ -11499,102 +11489,76 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      <AnimatePresence mode="wait">
-        {slide.image_url && !imgError ? (
-          <motion.img
-            ref={imgRef}
-            key={slide.id || slide.image_url}
-            src={slide.image_url}
-            alt={format(slide.title || "Pazanda AI")}
-            loading="eager"
-            {...({ fetchpriority: "high" } as any)}
-            decoding="async"
-            onLoad={() => setImageLoaded(true)}
-            onError={() => {
-              console.error("[Banner] rasm yuklanmadi:", slide.image_url);
-              setImgError(true);
-              setImageLoaded(true);
-            }}
-            initial={{ opacity: 0, scale: 1.03 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{
-              duration: 0.4,
-              ease: [0.25, 0.46, 0.45, 0.94],
-            }}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : null}
-      </AnimatePresence>
-
-      {/* Skeleton background while image loading */}
-      {!imageLoaded && slide.image_url && !imgError ? (
-        <div className="absolute inset-0 animate-pulse bg-slate-800/40" />
+      {/* 1. Rasm (z-0 layer) */}
+      {slide.image_url && !imgError ? (
+        <img
+          key={slide.id || slide.image_url}
+          src={slide.image_url}
+          alt={format(slide.title || "Pazanda AI")}
+          loading="eager"
+          decoding="async"
+          onError={() => {
+            console.error("[Banner] Rasm yuklanishida xatolik:", slide.image_url);
+            setImgError(true);
+          }}
+          className="absolute inset-0 h-full w-full object-cover z-0 transition-opacity duration-300"
+        />
       ) : null}
 
-      <div className="banner-overlay absolute inset-0" />
+      {/* 2. Gradient Overlay (z-10 layer) */}
+      <div className="banner-overlay absolute inset-0 z-10 pointer-events-none" />
 
-      <motion.div
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="absolute inset-x-0 bottom-0 p-4"
-      >
-        <h2 className="font-display text-xl font-extrabold leading-6 text-white drop-shadow-sm">
+      {/* 3. Matnlar va Tugmalar (z-20 layer) */}
+      <div className="absolute inset-x-0 bottom-0 p-4 z-20 pointer-events-auto">
+        <h2 className="font-display text-xl font-extrabold leading-6 text-white drop-shadow-md">
           {format(slide.title || "Pazanda AI")}
         </h2>
         {slide.subtitle ? (
-          <p className="mt-1 line-clamp-1 text-xs font-medium text-white/85">
+          <p className="mt-1 line-clamp-1 text-xs font-medium text-white/90 drop-shadow-sm">
             {format(slide.subtitle)}
           </p>
         ) : null}
         {linkUrl ? (
-          <motion.a
+          <a
             href={linkUrl}
             target="_blank"
             rel="noreferrer"
-            whileTap={{ scale: 0.95 }}
-            className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-[11px] font-extrabold text-[#DB2777] shadow"
+            className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-[11px] font-extrabold text-[#DB2777] shadow active:scale-95 transition-transform"
           >
             <span>{format(linkText)}</span>
             <ExternalLink size={12} />
-          </motion.a>
+          </a>
         ) : null}
-      </motion.div>
+      </div>
 
+      {/* 4. Karusel Navigatsiyasi (z-30 layer) */}
       {count > 1 ? (
         <>
-          <motion.button
-            whileTap={{ scale: 0.9 }}
+          <button
             onClick={() => setIndex((i) => (i - 1 + count) % count)}
             aria-label="Oldingi"
-            className="absolute left-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur"
+            className="absolute left-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur z-30 active:scale-95 transition-transform"
           >
             <ChevronLeft size={16} />
-          </motion.button>
-          <motion.button
-            whileTap={{ scale: 0.9 }}
+          </button>
+          <button
             onClick={() => setIndex((i) => (i + 1) % count)}
             aria-label="Keyingi"
-            className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur"
+            className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur z-30 active:scale-95 transition-transform"
           >
             <ChevronRight size={16} />
-          </motion.button>
-          <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/30 px-2.5 py-1 backdrop-blur">
+          </button>
+          <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 backdrop-blur z-30">
             {slides.map((s, i) => (
-              <motion.button
+              <button
                 key={s.id || i}
                 onClick={() => setIndex(i)}
                 aria-label={`Slayd ${i + 1}`}
-                animate={{
-                  width: i === index ? 16 : 6,
-                  backgroundColor:
-                    i === index
-                      ? "rgba(255, 255, 255, 1)"
-                      : "rgba(255, 255, 255, 0.5)",
-                }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
-                className="h-1.5 rounded-full"
+                className={
+                  i === index
+                    ? "h-1.5 w-4 rounded-full bg-white transition-all duration-300"
+                    : "h-1.5 w-1.5 rounded-full bg-white/50 transition-all duration-300"
+                }
               />
             ))}
           </div>
