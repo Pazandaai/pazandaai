@@ -22,7 +22,9 @@ const API_BASE = (
   (typeof window !== "undefined" && window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"
     : "")
-).replace(/\/$/, "");
+)
+  .replace(/\/$/, "")
+  .replace(/\/api$/, "");
 
 function getCategoryEmoji(cat: string): string {
   const v = toLat(cat).toLowerCase();

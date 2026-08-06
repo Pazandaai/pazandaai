@@ -6,7 +6,9 @@ export const API_BASE = (
   (typeof window !== "undefined" && window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"
     : "")
-).replace(/\/$/, "");
+)
+  .replace(/\/$/, "")
+  .replace(/\/api$/, "");
 
 export function tgHeaders(): Record<string, string> {
   return { "x-init-data": getInitData() };

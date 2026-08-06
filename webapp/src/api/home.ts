@@ -26,7 +26,9 @@ const API_BASE = (
   window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"
     : "")
-).replace(/\/$/, "");
+)
+  .replace(/\/$/, "")
+  .replace(/\/api$/, "");
 
 // Strips extra quotes and whitespace from strings
 const clean = (v: unknown): string => {

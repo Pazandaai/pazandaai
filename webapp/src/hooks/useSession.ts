@@ -73,6 +73,6 @@ export function useSession() {
     loading,
     refresh,
     isAdmin: Boolean(session?.isAdmin),
-    isPremium: Boolean(session?.user?.is_premium),
+    isPremium: Boolean(session?.user?.is_premium) || Boolean(session?.isAdmin),
   };
 }

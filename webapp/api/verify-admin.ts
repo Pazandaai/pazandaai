@@ -73,7 +73,7 @@ export default async function handler(
         username: user.username,
         language: dbUser?.language ?? "latn",
         is_premium: Boolean(dbUser?.is_premium) || isAdmin,
-        premium_until: dbUser?.premium_until ?? null,
+        premium_until: dbUser?.premium_until ?? (isAdmin ? new Date(Date.now() + 315360000000).toISOString() : null),
       },
     });
   } catch (error: any) {

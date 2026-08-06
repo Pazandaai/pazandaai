@@ -72,11 +72,13 @@ export default function ProfilePage() {
           <Crown size={18} />
           <h3 className="text-xs font-bold">{format("Premium obuna")}</h3>
         </div>
-        {isPremium && premiumUntil ? (
+        {isPremium || showAdminButton ? (
           <div className="mt-3 rounded-2xl bg-emerald-50 p-3">
             <p className="text-sm font-extrabold text-emerald-700">✅ {format("Faol")}</p>
             <p className="mt-1 text-xs font-semibold text-emerald-600">
-              {format("Tugash sanasi")}: {premiumUntil.toLocaleDateString()} • {daysLeft} {format("kun qoldi")}
+              {premiumUntil
+                ? `${format("Tugash sanasi")}: ${premiumUntil.toLocaleDateString()} • ${daysLeft} ${format("kun qoldi")}`
+                : format("Cheksiz obuna (Admin)")}
             </p>
           </div>
         ) : (

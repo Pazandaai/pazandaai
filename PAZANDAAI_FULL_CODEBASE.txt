@@ -6489,7 +6489,7 @@ export default async function handler(
         username: user.username,
         language: dbUser?.language ?? "latn",
         is_premium: Boolean(dbUser?.is_premium) || isAdmin,
-        premium_until: dbUser?.premium_until ?? null,
+        premium_until: dbUser?.premium_until ?? (isAdmin ? new Date(Date.now() + 315360000000).toISOString() : null),
       },
     });
   } catch (error: any) {
@@ -7057,7 +7057,9 @@ const API_BASE = (
   window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"
     : "")
-).replace(/\/$/, "");
+)
+  .replace(/\/$/, "")
+  .replace(/\/api$/, "");
 
 // Strips extra quotes and whitespace from strings
 const clean = (v: unknown): string => {
@@ -7856,22 +7858,22 @@ function StatsAdmin() {
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400">{format("Foydalanuvchilar")}</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.usersCount ?? 0}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.total_users ?? stats?.usersCount ?? 0}</p>
         </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400">{format("Premium a'zolar")}</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-pink-600">{stats?.premiumUsersCount ?? 0}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-pink-600">{stats?.premium_users ?? stats?.premiumUsersCount ?? 0}</p>
         </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400">{format("Retseptlar")}</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.recipesCount ?? 0}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.total_recipes ?? stats?.recipesCount ?? 0}</p>
         </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400">{format("Lifehacklar")}</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.lifehacksCount ?? 0}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.total_lifehacks ?? stats?.lifehacksCount ?? 0}</p>
         </div>
       </div>
     </div>
@@ -8982,9 +8984,9 @@ function BannerAdmin() {
         const b = res.data?.value;
         if (b) {
           setTitle(b.title ?? "");
-          setBadge(b.badge ?? "");
-          setImage(b.image ?? "");
-          setLinkText(b.linkText ?? "");
+          setBadge(b.badge ?? b.subtitle ?? "");
+          setImage(b.image ?? b.image_url ?? "");
+          setLinkText(b.linkText ?? b.link_text ?? "");
         }
       })
       .catch(() => {});
@@ -8997,6 +8999,10 @@ function BannerAdmin() {
         badge,
         image,
         linkText,
+        image_url: image,
+        subtitle: badge,
+        link_text: linkText,
+        active: true,
       },
     });
 
@@ -11690,7 +11696,7 @@ export function useSession() {
     loading,
     refresh,
     isAdmin: Boolean(session?.isAdmin),
-    isPremium: Boolean(session?.user?.is_premium),
+    isPremium: Boolean(session?.user?.is_premium) || Boolean(session?.isAdmin),
   };
 }
 
@@ -11712,7 +11718,9 @@ export const API_BASE = (
   (typeof window !== "undefined" && window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"
     : "")
-).replace(/\/$/, "");
+)
+  .replace(/\/$/, "")
+  .replace(/\/api$/, "");
 
 export function tgHeaders(): Record<string, string> {
   return { "x-init-data": getInitData() };
@@ -11967,7 +11975,9 @@ const API_BASE = (
   (typeof window !== "undefined" && window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"
     : "")
-).replace(/\/$/, "");
+)
+  .replace(/\/$/, "")
+  .replace(/\/api$/, "");
 
 export function useProductCatalog() {
   const [categories, setCategories] = useState<ProductCategory[]>(DEFAULT_CATEGORIES);
@@ -12621,28 +12631,31 @@ export function parseSingleIngredient(line: string): RecipeIngredient {
   let quantity: number | null = null;
   let unit: string | null = null;
 
-  const paren = text.match(PAREN_RE);
-  if (paren) {
-    quantity = toNumber(paren[1]);
-    unit = normalizeUnit(paren[2]);
-    text = text.slice(0, paren.index ?? 0).trim();
+  const lead = text.match(LEAD_RE);
+  if (lead) {
+    quantity = toNumber(lead[1]);
+    unit = lead[2] ? normalizeUnit(lead[2]) : null;
+    text = text.slice(lead[0].length).trim();
   } else {
-    const lead = text.match(LEAD_RE);
-    if (lead) {
-      quantity = toNumber(lead[1]);
-      unit = lead[2] ? normalizeUnit(lead[2]) : null;
-      text = text.slice(lead[0].length).trim();
+    const paren = text.match(PAREN_RE);
+    if (paren) {
+      quantity = toNumber(paren[1]);
+      unit = normalizeUnit(paren[2]);
+      text = text.slice(0, paren.index ?? 0).trim();
     }
-    const leadParen = text.match(LEAD_PAREN_RE);
-    if (leadParen) {
-      quantity = toNumber(leadParen[1]);
-      unit = normalizeUnit(leadParen[2]);
-      text = text.slice(leadParen[0].length).trim();
-    }
+  }
+
+  const leadParen = text.match(LEAD_PAREN_RE);
+  if (leadParen && (quantity == null || unit == null)) {
+    if (quantity == null) quantity = toNumber(leadParen[1]);
+    if (unit == null) unit = normalizeUnit(leadParen[2]);
+    text = text.slice(leadParen[0].length).trim();
   }
 
   // Remove trailing amounts or numbers left over
   text = text.replace(/^[0-9¼½¾⅓⅔][0-9¼½¾⅓⅔.,\s/–-]*\s*/, "");
+  // Clean up residual unit words at beginning of ingredient name
+  text = text.replace(/^(dona|osh qoshiq|choy qoshiq|stakan|banka|so'ta|tish|chimdim|bo'lak|rendasi)\s+/i, "");
   // Remove parenthetical descriptions like (ingichka somoncha to'g'ralgan)
   text = text.replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
   text = text.replace(/^[\s,.:;—-]+|[\s,.:;—-]+$/g, "").trim();
@@ -12652,12 +12665,12 @@ export function parseSingleIngredient(line: string): RecipeIngredient {
 }
 
 // =====================
-// ENTRY (singan \n va va/hamda larni bo'lish)
+// ENTRY (singan \n va ; larni bo'lish)
 // =====================
 export function parseIngredientEntry(raw: any): RecipeIngredient[] {
   const rawName = String(raw?.name ?? "");
   const lines = rawName
-    .split(/\\n|\n|\s+va\s+|\s+hamda\s+|;\s*|\.\s+(?=[A-Z0-9])/)
+    .split(/\\n|\n|;\s*|\.\s+(?=[A-Z0-9])/)
     .map((l) => l.trim())
     .filter(Boolean);
   if (!lines.length) return [];
@@ -13737,11 +13750,13 @@ export default function ProfilePage() {
           <Crown size={18} />
           <h3 className="text-xs font-bold">{format("Premium obuna")}</h3>
         </div>
-        {isPremium && premiumUntil ? (
+        {isPremium || showAdminButton ? (
           <div className="mt-3 rounded-2xl bg-emerald-50 p-3">
             <p className="text-sm font-extrabold text-emerald-700">✅ {format("Faol")}</p>
             <p className="mt-1 text-xs font-semibold text-emerald-600">
-              {format("Tugash sanasi")}: {premiumUntil.toLocaleDateString()} • {daysLeft} {format("kun qoldi")}
+              {premiumUntil
+                ? `${format("Tugash sanasi")}: ${premiumUntil.toLocaleDateString()} • ${daysLeft} ${format("kun qoldi")}`
+                : format("Cheksiz obuna (Admin)")}
             </p>
           </div>
         ) : (
@@ -13845,7 +13860,9 @@ const API_BASE = (
   (typeof window !== "undefined" && window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"
     : "")
-).replace(/\/$/, "");
+)
+  .replace(/\/$/, "")
+  .replace(/\/api$/, "");
 
 function getCategoryEmoji(cat: string): string {
   const v = toLat(cat).toLowerCase();

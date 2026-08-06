@@ -118,28 +118,31 @@ export function parseSingleIngredient(line: string): RecipeIngredient {
   let quantity: number | null = null;
   let unit: string | null = null;
 
-  const paren = text.match(PAREN_RE);
-  if (paren) {
-    quantity = toNumber(paren[1]);
-    unit = normalizeUnit(paren[2]);
-    text = text.slice(0, paren.index ?? 0).trim();
+  const lead = text.match(LEAD_RE);
+  if (lead) {
+    quantity = toNumber(lead[1]);
+    unit = lead[2] ? normalizeUnit(lead[2]) : null;
+    text = text.slice(lead[0].length).trim();
   } else {
-    const lead = text.match(LEAD_RE);
-    if (lead) {
-      quantity = toNumber(lead[1]);
-      unit = lead[2] ? normalizeUnit(lead[2]) : null;
-      text = text.slice(lead[0].length).trim();
+    const paren = text.match(PAREN_RE);
+    if (paren) {
+      quantity = toNumber(paren[1]);
+      unit = normalizeUnit(paren[2]);
+      text = text.slice(0, paren.index ?? 0).trim();
     }
-    const leadParen = text.match(LEAD_PAREN_RE);
-    if (leadParen) {
-      quantity = toNumber(leadParen[1]);
-      unit = normalizeUnit(leadParen[2]);
-      text = text.slice(leadParen[0].length).trim();
-    }
+  }
+
+  const leadParen = text.match(LEAD_PAREN_RE);
+  if (leadParen && (quantity == null || unit == null)) {
+    if (quantity == null) quantity = toNumber(leadParen[1]);
+    if (unit == null) unit = normalizeUnit(leadParen[2]);
+    text = text.slice(leadParen[0].length).trim();
   }
 
   // Remove trailing amounts or numbers left over
   text = text.replace(/^[0-9¼½¾⅓⅔][0-9¼½¾⅓⅔.,\s/–-]*\s*/, "");
+  // Clean up residual unit words at beginning of ingredient name
+  text = text.replace(/^(dona|osh qoshiq|choy qoshiq|stakan|banka|so'ta|tish|chimdim|bo'lak|rendasi)\s+/i, "");
   // Remove parenthetical descriptions like (ingichka somoncha to'g'ralgan)
   text = text.replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
   text = text.replace(/^[\s,.:;—-]+|[\s,.:;—-]+$/g, "").trim();
@@ -149,12 +152,12 @@ export function parseSingleIngredient(line: string): RecipeIngredient {
 }
 
 // =====================
-// ENTRY (singan \n va va/hamda larni bo'lish)
+// ENTRY (singan \n va ; larni bo'lish)
 // =====================
 export function parseIngredientEntry(raw: any): RecipeIngredient[] {
   const rawName = String(raw?.name ?? "");
   const lines = rawName
-    .split(/\\n|\n|\s+va\s+|\s+hamda\s+|;\s*|\.\s+(?=[A-Z0-9])/)
+    .split(/\\n|\n|;\s*|\.\s+(?=[A-Z0-9])/)
     .map((l) => l.trim())
     .filter(Boolean);
   if (!lines.length) return [];
