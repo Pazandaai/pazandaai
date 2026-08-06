@@ -8473,8 +8473,25 @@ export default async function handler(
       }
 
       // =====================
-      // BANNER
+      // BANNER & CATEGORY IMAGES
       // =====================
+      case "get_category_images": {
+        const data = await supabaseFetch("GET", "app_settings", { key: "eq.category_images", limit: 1 });
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+
+      case "save_category_images": {
+        const value = payload?.value ?? {};
+        const data = await supabaseFetch(
+          "POST",
+          "app_settings",
+          { on_conflict: "key" },
+          { key: "category_images", value },
+          "resolution=merge-duplicates,return=representation",
+        );
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+
       case "get_banner": {
         const data = await supabaseFetch("GET", "app_settings", {
           key: "eq.home_banner",
@@ -8541,6 +8558,27 @@ export default async function handler(
       ok: false,
       error: error?.message ?? "Server error",
     });
+  }
+}
+
+`
+
+---
+
+## 📄 webapp/api/category-images.ts
+
+`typescript
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { supabaseFetch } from "./_lib/supabase.js";
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  try {
+    const data = await supabaseFetch("GET", "app_settings", { key: "eq.category_images", limit: 1 });
+    res.setHeader("Cache-Control", "public, s-maxage=60");
+    return res.status(200).json({ ok: true, value: data?.[0]?.value ?? {} });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error?.message ?? "Server error" });
   }
 }
 
@@ -10133,7 +10171,7 @@ function AdminInner() {
   const isUserAdmin = isAdmin || user.id === 8544023815;
 
   const [tab, setTab] = useState<
-    "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks"
+    "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks" | "catimg"
   >("stats");
 
   return (
@@ -10162,6 +10200,7 @@ function AdminInner() {
             { id: "broadcast", label: "📣 Broadcast" },
             { id: "recipes", label: "🍳 Retseptlar" },
             { id: "lifehacks", label: "💡 Lifehacklar" },
+            { id: "catimg", label: "📁 Kategoriya rasmlari" },
             { id: "banner", label: "🖼 Banner" },
           ].map((item) => (
             <button
@@ -10196,6 +10235,7 @@ function AdminInner() {
               {tab === "broadcast" ? <BroadcastAdmin /> : null}
               {tab === "recipes" ? <RecipesAdmin /> : null}
               {tab === "lifehacks" ? <LifehacksAdmin /> : null}
+              {tab === "catimg" ? <CategoryImagesAdmin /> : null}
               {tab === "banner" ? <BannerAdmin /> : null}
             </>
           )}
@@ -11512,6 +11552,51 @@ function LifehacksAdmin() {
   );
 }
 
+function CategoryImagesAdmin() {
+  const { format } = useApp();
+  const [images, setImages] = useState<Record<string, string>>({});
+  const [categories, setCategories] = useState<string[]>([]);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminRequest("get_category_images")
+      .then((r) => setImages(r.data?.value ?? {}))
+      .catch(() => {});
+    adminRequest("list_recipes")
+      .then((r) => {
+        const cats = Array.from(new Set((r.data ?? []).map((x: any) => x.category).filter(Boolean)));
+        setCategories(cats as string[]);
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    await adminRequest("save_category_images", { value: images });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-semibold text-slate-500">
+        {format("Har bir kategoriya (papka) uchun ixtiyoriy rasm yuklang. Rasm yo'q bo'lsa emoji ko'rinadi.")}
+      </p>
+      {categories.map((cat) => (
+        <div key={cat} className="space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
+          <p className="text-sm font-bold text-slate-900">{format(cat)}</p>
+          <ImageUploader
+            value={images[cat] ?? ""}
+            onChange={(url) => setImages((prev) => ({ ...prev, [cat]: url }))}
+          />
+        </div>
+      ))}
+      <button onClick={save} className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white">
+        {saved ? format("✅ Saqlandi") : format("Saqlash")}
+      </button>
+    </div>
+  );
+}
+
 export default function AdminOverlay() {
   const { activeModal } = useApp();
 
@@ -12148,6 +12233,59 @@ export default function BozorlikModal() {
           </div>
         )}
       </div>
+    </ModalShell>
+  );
+}
+
+`
+
+---
+
+## 📄 webapp/src/components/modals/LifehackModal.tsx
+
+`typescript
+import { Copy } from "lucide-react";
+import { useState } from "react";
+import { useApp } from "../../context/AppContext";
+import { hapticNotification } from "../../lib/telegram";
+import type { Lifehack } from "../../types/lifehack";
+import ModalShell from "../ui/ModalShell";
+import RichText from "../ui/RichText";
+import ZoomableImage from "../ui/ZoomableImage";
+
+export default function LifehackModal({ lifehack, onClose }: { lifehack: Lifehack | null; onClose: () => void }) {
+  const { format, t } = useApp();
+  const [copied, setCopied] = useState(false);
+
+  const copyContent = async () => {
+    if (!lifehack) return;
+    try {
+      await navigator.clipboard.writeText(`${format(lifehack.title)}\n${format(lifehack.content)}`);
+      setCopied(true);
+      hapticNotification("success");
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+
+  return (
+    <ModalShell open={Boolean(lifehack)} title={lifehack ? format(lifehack.title) : ""} onClose={onClose}>
+      {lifehack ? (
+        <div className="space-y-4">
+          {lifehack.category ? (
+            <span className="inline-block rounded-full bg-[#DB2777]/10 px-2.5 py-1 text-[10px] font-bold text-[#DB2777]">
+              {format(lifehack.category)}
+            </span>
+          ) : null}
+          {lifehack.image_url ? (
+            <ZoomableImage src={lifehack.image_url} alt={format(lifehack.title)} className="aspect-[16/9] rounded-2xl" />
+          ) : null}
+          <RichText text={format(lifehack.content)} />
+          <button onClick={copyContent} className="flex h-10 items-center gap-2 rounded-2xl bg-slate-900 px-4 text-xs font-bold text-white">
+            <Copy size={14} />
+            {copied ? t("copied") : t("copy")}
+          </button>
+        </div>
+      ) : null}
     </ModalShell>
   );
 }
@@ -13076,36 +13214,63 @@ import { Loader2, Search, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 import { useApp } from "../../context/AppContext";
-import { PRODUCTS, PRODUCT_CATEGORIES, getProduct } from "../../lib/products";
+import { PRODUCT_CATEGORIES, PRODUCTS, getProduct } from "../../lib/products";
 import { getRecipeMatch } from "../../lib/recipe-utils";
+import { fuzzyScore } from "../../lib/search";
 import { hapticNotification, hapticSelection } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Recipe } from "../../types";
 import RecipeCard from "./RecipeCard";
 
-interface SmartMatchPanelProps {
+interface Props {
   recipes: Recipe[];
   onOpenRecipe: (recipe: Recipe) => void;
 }
 
-export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPanelProps) {
+export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
   const { format, t } = useApp();
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
-  const [activeCat, setActiveCat] = useState<string>("all");
+  const [focused, setFocused] = useState(false);
+  const [activeCat, setActiveCat] = useState("all");
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const filteredProducts = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return PRODUCTS.filter((p) => (activeCat === "all" ? true : p.category === activeCat))
-      .filter((p) => {
-        if (!q) return true;
-        const hay = [p.label, p.key, ...(p.aliases ?? [])].join(" ").toLowerCase();
-        return hay.includes(q);
-      });
-  }, [query, activeCat]);
+  // ✅ Mahsulot qidiruvi — fuzzy, tagida dropdown
+  const productHits = useMemo(() => {
+    const q = query.trim();
+    if (q.length < 1) return [];
+    return PRODUCTS
+      .map((p) => ({ p, score: fuzzyScore(q, [p.label, ...(p.aliases ?? [])].join(" ")) }))
+      .filter((x) => x.score >= 20)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map((x) => x.p);
+  }, [query]);
+
+  const filteredProducts = useMemo(
+    () => PRODUCTS.filter((p) => (activeCat === "all" ? true : p.category === activeCat)),
+    [activeCat],
+  );
+
+  const selectedTerms = useMemo(
+    () => selected.flatMap((k) => { const p = getProduct(k); return p ? [p.label, ...(p.aliases ?? [])] : [k]; }),
+    [selected],
+  );
+
+  const matches = useMemo(() => {
+    if (!showResults || !selectedTerms.length) return [];
+    return recipes
+      .map((recipe) => ({ recipe, match: getRecipeMatch(recipe, selectedTerms) }))
+      .filter((i) => ["exact", "almost", "partial"].includes(i.match.status))
+      .sort((a, b) => b.match.matchPercent - a.match.matchPercent);
+  }, [recipes, selectedTerms, showResults]);
+
+  const exact = matches.filter((m) => m.match.status === "exact");
+  const almost = matches.filter((m) => m.match.status === "almost");
+  const partial = matches.filter((m) => m.match.status === "partial");
 
   const toggle = (key: string) => {
     hapticSelection();
@@ -13113,24 +13278,6 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPan
     setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   };
 
-  const selectedLabels = useMemo(
-    () => selected.map((k) => getProduct(k)?.label ?? k),
-    [selected],
-  );
-
-  const matches = useMemo(() => {
-    if (!showResults || !selectedLabels.length) return [];
-    return recipes
-      .map((recipe) => ({ recipe, match: getRecipeMatch(recipe, selectedLabels) }))
-      .filter((item) => ["exact", "almost", "partial"].includes(item.match.status))
-      .sort((a, b) => b.match.matchPercent - a.match.matchPercent);
-  }, [recipes, selectedLabels, showResults]);
-
-  const exact = matches.filter((m) => m.match.status === "exact");
-  const almost = matches.filter((m) => m.match.status === "almost");
-  const partial = matches.filter((m) => m.match.status === "partial");
-
-  // ✅ YUQORIDA turadigan tugma — bosilganda animatsiya bilan topadi
   const findMatches = () => {
     if (!selected.length || searching) return;
     hapticNotification("success");
@@ -13139,20 +13286,20 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPan
     setTimeout(() => {
       setSearching(false);
       setShowResults(true);
-      setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+      setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
     }, 900);
   };
 
   const badgeLabel = (item: (typeof matches)[number]) => {
-    const missing = item.match.missing.length;
-    if (!missing) return "100% mos ✅";
-    return `${item.match.matchPercent}% • ${missing} ta yetmaydi`;
+    const n = item.match.missing.length;
+    if (!n) return "100% mos ✅";
+    return `${item.match.matchPercent}% • ${n} ta yetmaydi`;
   };
 
   const renderGroup = (title: string, items: typeof matches, badgeClass: string) => {
     if (!items.length) return null;
     return (
-      <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="space-y-2">
+      <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
         <h3 className="text-sm font-extrabold text-slate-900">{title}</h3>
         <div className="grid grid-cols-2 items-stretch gap-3">
           {items.map((item) => (
@@ -13171,8 +13318,8 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPan
 
   return (
     <div className="space-y-4">
-      {/* ✅ ChatGPT-uslubidagi prompt box */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm focus-within:border-[#DB2777]/40">
+      {/* Prompt box */}
+      <div className="rounded-3xl border border-[#DB2777]/10 bg-[#DB2777]/5 p-4">
         <div className="flex items-center gap-2 text-[#DB2777]">
           <Sparkles size={16} />
           <h3 className="font-display text-sm font-extrabold">{t("aiMatch")}</h3>
@@ -13182,7 +13329,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPan
             {selected.map((key) => {
               const p = getProduct(key);
               return (
-                <button key={key} onClick={() => toggle(key)} className="flex items-center gap-1 rounded-full bg-[#DB2777]/10 px-2.5 py-1.5 text-xs font-bold text-[#DB2777]">
+                <button key={key} onClick={() => toggle(key)} className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-xs font-bold text-[#DB2777] shadow-sm">
                   <span>{p?.emoji}</span>
                   {format(p?.label ?? key)}
                   <X size={11} />
@@ -13194,59 +13341,69 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPan
             </button>
           </div>
         ) : (
-          <p className="mt-2 text-xs leading-5 text-slate-500">{t("matchSelectIngredients")}</p>
+          <p className="mt-2 text-xs leading-5 text-slate-600">{format("Masalliqlarni tanlang — sizdagi mahsulotlar bo'yicha taom topamiz.")}</p>
         )}
-        <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
-          <Search size={15} className="text-slate-400" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={format("Qidirish: sabzi, sut, guruch...")}
-            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-          />
+
+        {/* ✅ Search — natijalar TAGIDA dropdown */}
+        <div className="relative mt-2 border-t border-[#DB2777]/10 pt-2">
+          <div className="flex items-center gap-2">
+            <Search size={15} className="text-slate-400" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setTimeout(() => setFocused(false), 150)}
+              placeholder={format("Masalliq qidirish: sabzi, sut...")}
+              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+            />
+          </div>
+          {focused && productHits.length > 0 ? (
+            <div className="absolute inset-x-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl">
+              {productHits.map((p) => (
+                <button
+                  key={p.key}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { if (!selected.includes(p.key)) toggle(p.key); setQuery(""); }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left active:bg-slate-50"
+                >
+                  <span className="text-lg">{p.emoji}</span>
+                  <span className="flex-1 text-sm font-semibold text-slate-800">{format(p.label)}</span>
+                  {selected.includes(p.key) ? <X size={12} className="text-[#DB2777]" /> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
-      {/* ✅ TUGMA — pastda emas, tanlovdan keyin darhol */}
+      {/* Tugma — yuqorida */}
       <button
         onClick={findMatches}
         disabled={!selected.length || searching}
         className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white shadow-lg active:scale-[0.98] disabled:opacity-40"
       >
         {searching ? <Loader2 size={17} className="animate-spin" /> : <Sparkles size={17} />}
-        {searching ? format("Tanlamoqda...") : `${t("matchFind")} ${selected.length ? `(${selected.length})` : ""}`}
+        {searching ? format("Tanlamoqda...") : `${format("Mos taomlarni topish")} ${selected.length ? `(${selected.length})` : ""}`}
       </button>
 
-      {/* Kategoriyalar */}
+      {/* Kategoriyalar + emoji grid (qidiruv bo'sh bo'lsa) */}
       <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
-        <button
-          onClick={() => setActiveCat("all")}
-          className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === "all" ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}
-        >
+        <button onClick={() => setActiveCat("all")} className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === "all" ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}>
           {t("all")}
         </button>
         {PRODUCT_CATEGORIES.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => setActiveCat(c.id)}
-            className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === c.id ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}
-          >
+          <button key={c.id} onClick={() => setActiveCat(c.id)} className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === c.id ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}>
             {c.emoji} {format(c.label)}
           </button>
         ))}
       </div>
-
-      {/* ✅ Emoji mahsulotlar grid */}
       <div className="grid grid-cols-4 gap-2">
         {filteredProducts.map((p) => {
           const sel = selected.includes(p.key);
           return (
             <motion.button key={p.key} whileTap={{ scale: 0.92 }} onClick={() => toggle(p.key)}
-              className={cn(
-                "flex flex-col items-center gap-1 rounded-2xl border p-2 transition-colors",
-                sel ? "border-[#DB2777] bg-[#DB2777]/10" : "border-slate-100 bg-white shadow-sm",
-              )}
-            >
+              className={cn("flex flex-col items-center gap-1 rounded-2xl border p-2", sel ? "border-[#DB2777] bg-[#DB2777]/10" : "border-slate-100 bg-white shadow-sm")}>
               <span className="text-xl">{p.emoji}</span>
               <span className={cn("line-clamp-1 text-center text-[10px] font-semibold", sel ? "text-[#DB2777]" : "text-slate-600")}>
                 {format(p.label)}
@@ -13256,14 +13413,12 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPan
         })}
       </div>
 
-      {/* Natijalar — animatsiya bilan */}
+      {/* Natijalar */}
       <div ref={resultsRef} className="scroll-mt-20 space-y-5">
         <AnimatePresence>
           {searching ? (
             <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid grid-cols-2 gap-3">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="h-48 animate-pulse rounded-3xl bg-gradient-to-br from-pink-50 to-rose-100" />
-              ))}
+              {[0, 1, 2, 3].map((i) => <div key={i} className="h-48 animate-pulse rounded-3xl bg-gradient-to-br from-pink-50 to-rose-100" />)}
             </motion.div>
           ) : showResults ? (
             <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
@@ -13296,6 +13451,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPan
 import { ChefHat, Lightbulb, Search } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { fuzzyFilter } from "../../lib/search";
 import type { Recipe } from "../../types";
 import type { Lifehack } from "../../types/lifehack";
 
@@ -13305,46 +13461,41 @@ interface GlobalSearchProps {
   onOpenRecipe: (r: Recipe) => void;
   onOpenLifehack: (l: Lifehack) => void;
   onSubmit?: (q: string) => void;
+  placeholder?: string;
 }
 
 export default function GlobalSearch({
-  recipes, lifehacks, onOpenRecipe, onOpenLifehack, onSubmit,
+  recipes, lifehacks, onOpenRecipe, onOpenLifehack, onSubmit, placeholder,
 }: GlobalSearchProps) {
   const { format } = useApp();
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const q = query.trim().toLowerCase();
+  const q = query.trim();
 
   const recipeHits = useMemo(
     () => (q.length >= 2
-      ? recipes
-          .filter((r) => [r.title, r.description, r.category].filter(Boolean).join(" ").toLowerCase().includes(q))
-          .slice(0, 6)
+      ? fuzzyFilter(recipes, q, (r) => [r.title, r.category, r.description].filter(Boolean).join(" ")).slice(0, 6)
       : []),
     [q, recipes],
   );
-
   const lifehackHits = useMemo(
     () => (q.length >= 2
-      ? lifehacks
-          .filter((l) => [l.title, l.category].filter(Boolean).join(" ").toLowerCase().includes(q))
-          .slice(0, 4)
+      ? fuzzyFilter(lifehacks, q, (l) => [l.title, l.category].filter(Boolean).join(" ")).slice(0, 3)
       : []),
     [q, lifehacks],
   );
 
   const showDrop = focused && q.length >= 2 && (recipeHits.length > 0 || lifehackHits.length > 0);
 
-  // ✅ Klaviatura ochilganda input ko'rinishda qoladi
   const onFocus = () => {
     setFocused(true);
     setTimeout(() => inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
   };
 
   return (
-    <div className="relative">
+    <div className="relative z-40">
       <div className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm focus-within:border-[#DB2777]/40">
         <Search size={17} className="text-slate-400" />
         <input
@@ -13353,14 +13504,15 @@ export default function GlobalSearch({
           onChange={(e) => setQuery(e.target.value)}
           onFocus={onFocus}
           onBlur={() => setTimeout(() => setFocused(false), 150)}
-          onKeyDown={(e) => { if (e.key === "Enter" && onSubmit) onSubmit(query.trim()); }}
-          placeholder={format("Retsept yoki maslahat qidirish...")}
+          onKeyDown={(e) => { if (e.key === "Enter" && onSubmit) onSubmit(q); }}
+          placeholder={placeholder ?? format("Retsept yoki maslahat qidirish...")}
           className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
         />
       </div>
 
+      {/* ✅ Natijalar — search bar TAGIDA */}
       {showDrop ? (
-        <div className="absolute inset-x-0 top-full z-40 mt-2 max-h-[55vh] overflow-y-auto rounded-3xl border border-slate-100 bg-white shadow-2xl">
+        <div className="absolute inset-x-0 top-full mt-2 max-h-[55vh] overflow-y-auto rounded-3xl border border-slate-100 bg-white shadow-2xl">
           {recipeHits.map((r) => (
             <button
               key={`r-${r.id}`}
@@ -15123,6 +15275,87 @@ export function getUniqueIngredients(recipes: Recipe[]): string[] {
 
 ---
 
+## 📄 webapp/src/lib/search.ts
+
+`typescript
+import { toLat } from "./translit";
+
+// Imlo, apostrof va alifbo farqlarini yo'qotadi
+export function normalizeSearch(value: string): string {
+  return toLat(value || "")
+    .toLowerCase()
+    .replace(/[‘’ʻ`´]/g, "'")
+    .replace(/[^a-z0-9'\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = new Array(b.length + 1).fill(0).map((_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const curr = [i, ...new Array(b.length).fill(0)];
+    for (let j = 1; j <= b.length; j++) {
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    prev = curr;
+  }
+  return prev[b.length];
+}
+
+// 0..100 ball: qancha yuqori — shuncha mos
+export function fuzzyScore(query: string, haystack: string): number {
+  const q = normalizeSearch(query);
+  const h = normalizeSearch(haystack);
+  if (!q || !h) return 0;
+  if (h.includes(q)) return 100;
+  const qTokens = q.split(" ").filter(Boolean);
+  const hTokens = h.split(" ").filter(Boolean);
+  let total = 0;
+  for (const qt of qTokens) {
+    let best = 0;
+    for (const ht of hTokens) {
+      if (ht === qt) { best = Math.max(best, 60); continue; }
+      if (qt.length >= 2 && ht.startsWith(qt)) best = Math.max(best, 40);
+      if (qt.length >= 3 && ht.includes(qt)) best = Math.max(best, 30);
+      const tol = qt.length <= 4 ? 1 : 2;
+      const d = levenshtein(qt, ht);
+      if (d <= tol) best = Math.max(best, 35 - d * 8);
+      else if (qt.length >= 5) {
+        const d2 = levenshtein(qt, ht.slice(0, qt.length));
+        if (d2 <= tol) best = Math.max(best, 30 - d2 * 6);
+      }
+    }
+    total += best;
+  }
+  return total;
+}
+
+export function fuzzyFilter<T>(
+  items: T[],
+  query: string,
+  getText: (item: T) => string,
+  minScore = 25,
+): T[] {
+  const q = normalizeSearch(query);
+  if (!q) return items;
+  return items
+    .map((item) => ({ item, score: fuzzyScore(q, getText(item)) }))
+    .filter((x) => x.score >= minScore)
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.item);
+}
+
+`
+
+---
+
 ## 📄 webapp/src/lib/supabase.ts
 
 `typescript
@@ -15975,196 +16208,245 @@ export default function ProfilePage() {
 ## 📄 webapp/src/pages/RecipesPage.tsx
 
 `typescript
+import { ChevronLeft, SlidersHorizontal } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-
+import { fetchLifehacks } from "../api/lifehacks";
 import { fetchRecipes } from "../api/recipes";
+import LifehackModal from "../components/modals/LifehackModal";
 import RecipeCard from "../components/recipes/RecipeCard";
-import RecipeFilters, {
-  type RecipeViewMode,
-} from "../components/recipes/RecipeFilters";
 import RecipeModal from "../components/recipes/RecipeModal";
 import SmartMatchPanel from "../components/recipes/SmartMatchPanel";
+import GlobalSearch from "../components/search/GlobalSearch";
 import { useApp } from "../context/AppContext";
 import { getDifficultyKey } from "../lib/recipe-utils";
+import { fuzzyFilter } from "../lib/search";
+import { toLat } from "../lib/translit";
+import { cn } from "../lib/utils";
 import type { DifficultyKey, Recipe } from "../types";
+import type { Lifehack } from "../types/lifehack";
+
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
+    ? "https://pazandaai.vercel.app"
+    : "")
+).replace(/\/$/, "");
+
+function getCategoryEmoji(cat: string): string {
+  const v = toLat(cat).toLowerCase();
+  if (v.includes("palov") || v.includes("quyuq") || v.includes("asosiy")) return "🍚";
+  if (v.includes("sho'rva") || v.includes("mastava")) return "🍲";
+  if (v.includes("salat") || v.includes("gazak")) return "🥗";
+  if (v.includes("tort") || v.includes("chizkeyk")) return "🎂";
+  if (v.includes("pechenye") || v.includes("biskvit")) return "🍪";
+  if (v.includes("pirog") || v.includes("tart")) return "🥧";
+  if (v.includes("shirin") || v.includes("pishiriq") || v.includes("nonushta") || v.includes("xamir")) return "🍰";
+  if (v.includes("go'sht") || v.includes("parranda")) return "🍖";
+  if (v.includes("garnir") || v.includes("sabzavot")) return "🥦";
+  if (v.includes("ichimlik") || v.includes("kokteyl")) return "🥤";
+  if (v.includes("muzqaymoq") || v.includes("sovuq")) return "🍨";
+  if (v.includes("turk")) return "🇹🇷";
+  if (v.includes("koreys") || v.includes("dunyo")) return "🌍";
+  return "🍽️";
+}
+
+const FOLDER_GRADIENTS = [
+  "from-pink-100 to-rose-50",
+  "from-amber-100 to-yellow-50",
+  "from-emerald-100 to-teal-50",
+  "from-sky-100 to-blue-50",
+  "from-violet-100 to-purple-50",
+  "from-orange-100 to-amber-50",
+];
 
 export default function RecipesPage() {
-  const {
-    t,
-    format,
-    recipesSearchQuery,
-    setRecipesSearchQuery,
-  } = useApp();
-
+  const { format, t } = useApp();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [lifehacks, setLifehacks] = useState<Lifehack[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  const [query, setQuery] = useState(recipesSearchQuery);
-
-  useEffect(() => {
-    setQuery(recipesSearchQuery);
-  }, [recipesSearchQuery]);
-
-  const handleQueryChange = (value: string) => {
-    setQuery(value);
-    setRecipesSearchQuery(value);
-  };
-
-  const [mode, setMode] = useState<RecipeViewMode>("catalog");
-  const [category, setCategory] = useState<string | null>(null);
+  const [categoryImages, setCategoryImages] = useState<Record<string, string>>({});
+  const [mode, setMode] = useState<"catalog" | "match">("catalog");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [maxTime, setMaxTime] = useState<number | null>(null);
   const [difficulty, setDifficulty] = useState<DifficultyKey | null>(null);
-
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [selectedLifehack, setSelectedLifehack] = useState<Lifehack | null>(null);
 
   useEffect(() => {
-    let active = true;
-
-    fetchRecipes()
-      .then((data) => {
-        if (active) {
-          setRecipes(data);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setError(true);
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
+    fetchRecipes().then(setRecipes).catch(() => {}).finally(() => setLoading(false));
+    fetchLifehacks().then(setLifehacks).catch(() => {});
+    fetch(`${API_BASE}/api/category-images`)
+      .then((r) => r.json())
+      .then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); })
+      .catch(() => {});
   }, []);
 
   const categories = useMemo(() => {
-    const set = new Set<string>();
-
+    const map = new Map<string, number>();
     for (const r of recipes) {
-      if (r.category) set.add(r.category);
+      if (r.category) map.set(r.category, (map.get(r.category) ?? 0) + 1);
     }
-
-    return Array.from(set);
+    return Array.from(map.entries());
   }, [recipes]);
 
-  const filteredRecipes = useMemo(() => {
-    const q = query.trim().toLowerCase();
+  const inCategory = useMemo(() => {
+    let items = recipes.filter((r) => r.category === selectedCategory);
+    if (maxTime) items = items.filter((r) => (r.cook_time_minutes ?? 0) <= maxTime);
+    if (difficulty) items = items.filter((r) => getDifficultyKey(r.difficulty) === difficulty);
+    return items;
+  }, [recipes, selectedCategory, maxTime, difficulty]);
 
-    return recipes.filter((r) => {
-      if (q) {
-        const titleMatch = r.title.toLowerCase().includes(q);
-        const descMatch = r.description?.toLowerCase().includes(q);
-        const catMatch = r.category?.toLowerCase().includes(q);
-
-        if (!titleMatch && !descMatch && !catMatch) {
-          return false;
-        }
-      }
-
-      if (category && r.category !== category) {
-        return false;
-      }
-
-      if (maxTime && r.cook_time_minutes && r.cook_time_minutes > maxTime) {
-        return false;
-      }
-
-      if (difficulty) {
-        const dKey = getDifficultyKey(r.difficulty);
-        if (dKey !== difficulty) return false;
-      }
-
-      return true;
-    });
-  }, [recipes, query, category, maxTime, difficulty]);
+  const searchResults = useMemo(
+    () => (appliedQuery
+      ? fuzzyFilter(recipes, appliedQuery, (r) => [r.title, r.category, r.description].filter(Boolean).join(" "))
+      : []),
+    [appliedQuery, recipes],
+  );
 
   if (loading) {
     return (
       <div className="space-y-4">
         <div className="h-12 animate-pulse rounded-3xl bg-slate-200/70" />
-        <div className="h-12 animate-pulse rounded-3xl bg-slate-200/70" />
         <div className="grid grid-cols-2 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-52 animate-pulse rounded-3xl bg-slate-200/70" />
-          ))}
+          {[0, 1, 2, 3].map((i) => <div key={i} className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />)}
         </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center p-8 text-center text-sm font-semibold text-red-500">
-        {t("errorLoad")}
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <RecipeFilters
-        query={query}
-        onQueryChange={handleQueryChange}
-        mode={mode}
-        onModeChange={setMode}
-        categories={categories}
-        category={category}
-        onCategoryChange={setCategory}
-        maxTime={maxTime}
-        onMaxTimeChange={setMaxTime}
-        difficulty={difficulty}
-        onDifficultyChange={setDifficulty}
+      {/* ✅ Qidiruv — natijalar tagida dropdown */}
+      <GlobalSearch
+        recipes={recipes}
+        lifehacks={lifehacks}
+        onOpenRecipe={setSelectedRecipe}
+        onOpenLifehack={setSelectedLifehack}
+        onSubmit={(q) => { setAppliedQuery(q); setSelectedCategory(null); }}
       />
 
-      {mode === "catalog" ? (
-        query.trim().length >= 2 ? (
-          <div className="space-y-2">
-            {filteredRecipes.slice(0, 10).map((r) => (
+      {/* Rejim toggle */}
+      <div className="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100 p-1.5">
+        <button
+          onClick={() => setMode("catalog")}
+          className={cn("rounded-2xl px-3 py-2.5 text-sm font-bold", mode === "catalog" ? "bg-white text-[#DB2777] shadow" : "text-slate-500")}
+        >
+          {t("catalog")}
+        </button>
+        <button
+          onClick={() => setMode("match")}
+          className={cn("rounded-2xl px-3 py-2.5 text-sm font-bold", mode === "match" ? "bg-white text-[#DB2777] shadow" : "text-slate-500")}
+        >
+          {t("aiMatch")}
+        </button>
+      </div>
+
+      {mode === "match" ? (
+        <SmartMatchPanel recipes={recipes} onOpenRecipe={setSelectedRecipe} />
+      ) : appliedQuery ? (
+        /* Enter bosilganda — fuzzy natijalar */
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display text-sm font-extrabold text-slate-900">
+              {format("Natijalar")}: "{appliedQuery}"
+            </h3>
+            <button onClick={() => setAppliedQuery("")} className="text-xs font-bold text-[#DB2777]">
+              {t("matchClear")}
+            </button>
+          </div>
+          {searchResults.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+              {t("noRecipes")}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 items-stretch gap-3">
+              {searchResults.map((r) => <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipe} />)}
+            </div>
+          )}
+        </section>
+      ) : selectedCategory ? (
+        /* Kategoriya ichida */
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedCategory(null)}
+              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="text-xl">{getCategoryEmoji(selectedCategory)}</span>
+            <h2 className="font-display text-base font-extrabold text-slate-900">{format(selectedCategory)}</h2>
+          </div>
+
+          {/* Kompakt filtrlar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <SlidersHorizontal size={14} className="text-slate-400" />
+            {[null, 15, 30, 60].map((time) => (
               <button
-                key={r.id}
-                onClick={() => setSelectedRecipe(r)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 text-left shadow-sm active:bg-slate-50"
+                key={String(time)}
+                onClick={() => setMaxTime(time)}
+                className={cn("rounded-full px-3 py-1.5 text-[11px] font-bold", maxTime === time ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}
               >
-                <span className="text-lg">🍳</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold text-slate-900">{format(r.title)}</span>
-                  <span className="block text-[11px] text-slate-400">
-                    {format(r.category ?? "")}{r.cook_time_minutes ? ` • ${r.cook_time_minutes} daqiqa` : ""}
-                  </span>
-                </span>
+                {time === null ? t("all") : `≤ ${time} ${t("minutes")}`}
               </button>
             ))}
-            {filteredRecipes.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-                {t("noRecipes")}
-              </div>
-            ) : null}
-          </div>
-        ) : filteredRecipes.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-            {t("noRecipes")}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 items-stretch gap-3">
-            {filteredRecipes.map((recipe) => (
-              <RecipeCard key={recipe.id} recipe={recipe} onOpen={setSelectedRecipe} />
+            {([null, "easy", "medium", "hard"] as (DifficultyKey | null)[]).map((d) => (
+              <button
+                key={String(d)}
+                onClick={() => setDifficulty(d)}
+                className={cn("rounded-full px-3 py-1.5 text-[11px] font-bold", difficulty === d ? "bg-amber-400 text-slate-900" : "bg-white text-slate-500 shadow-sm")}
+              >
+                {d === null ? t("all") : t(d)}
+              </button>
             ))}
           </div>
-        )
+
+          {inCategory.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+              {t("noRecipes")}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 items-stretch gap-3">
+              {inCategory.map((r) => <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipe} />)}
+            </div>
+          )}
+        </section>
       ) : (
-        <SmartMatchPanel
-          recipes={recipes}
-          onOpenRecipe={setSelectedRecipe}
-        />
+        /* ✅ Papkalar (lifehacks kabi) */
+        <section className="space-y-3">
+          <h2 className="font-display text-base font-extrabold text-slate-900">{format("Kategoriyalar")}</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {categories.map(([cat, count], idx) => (
+              <motion.button
+                key={cat}
+                whileTap={{ scale: 0.96 }}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.04 }}
+                onClick={() => setSelectedCategory(cat)}
+                className="overflow-hidden rounded-3xl border border-slate-100 bg-white text-left shadow-sm"
+              >
+                <div className={`relative h-20 w-full bg-gradient-to-br ${FOLDER_GRADIENTS[idx % FOLDER_GRADIENTS.length]}`}>
+                  {categoryImages[cat] ? (
+                    <img src={categoryImages[cat]} alt={format(cat)} loading="lazy" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-3xl">{getCategoryEmoji(cat)}</span>
+                  )}
+                </div>
+                <div className="p-3">
+                  <h3 className="line-clamp-1 font-display text-sm font-bold text-slate-900">{format(cat)}</h3>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{count} {t("countSuffix")}</p>
+                </div>
+              </motion.button>
+            ))}
+          </div>
+        </section>
       )}
 
-      <RecipeModal
-        recipe={selectedRecipe}
-        onClose={() => setSelectedRecipe(null)}
-      />
+      <RecipeModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} />
+      <LifehackModal lifehack={selectedLifehack} onClose={() => setSelectedLifehack(null)} />
     </div>
   );
 }

@@ -2,7 +2,8 @@ import { Loader2, Search, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 import { useApp } from "../../context/AppContext";
-import { PRODUCT_CATEGORIES, PRODUCTS, getProduct } from "../../lib/products";
+import { useProductCatalog } from "../../lib/catalog";
+import { findProduct } from "../../lib/products";
 import { getRecipeMatch } from "../../lib/recipe-utils";
 import { fuzzyScore } from "../../lib/search";
 import { hapticNotification, hapticSelection } from "../../lib/telegram";
@@ -17,6 +18,7 @@ interface Props {
 
 export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
   const { format, t } = useApp();
+  const { categories, products } = useProductCatalog();
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
@@ -24,28 +26,30 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  // ✅ Mahsulot qidiruvi — fuzzy, tagida dropdown
   const productHits = useMemo(() => {
     const q = query.trim();
     if (q.length < 1) return [];
-    return PRODUCTS
+    return products
       .map((p) => ({ p, score: fuzzyScore(q, [p.label, ...(p.aliases ?? [])].join(" ")) }))
       .filter((x) => x.score >= 20)
       .sort((a, b) => b.score - a.score)
       .slice(0, 8)
       .map((x) => x.p);
-  }, [query]);
+  }, [query, products]);
 
-  const filteredProducts = useMemo(
-    () => PRODUCTS.filter((p) => (activeCat === "all" ? true : p.category === activeCat)),
-    [activeCat],
+  const gridProducts = useMemo(
+    () => products.filter((p) => (activeCat === "all" ? true : p.category === activeCat)),
+    [products, activeCat],
   );
 
   const selectedTerms = useMemo(
-    () => selected.flatMap((k) => { const p = getProduct(k); return p ? [p.label, ...(p.aliases ?? [])] : [k]; }),
-    [selected],
+    () =>
+      selected.flatMap((k) => {
+        const p = findProduct(products, k);
+        return p ? [p.label, ...(p.aliases ?? [])] : [k];
+      }),
+    [selected, products],
   );
 
   const matches = useMemo(() => {
@@ -81,7 +85,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
   const badgeLabel = (item: (typeof matches)[number]) => {
     const n = item.match.missing.length;
     if (!n) return "100% mos ✅";
-    return `${item.match.matchPercent}% • ${n} ta yetmaydi`;
+    return `${item.match.matchPercent}% • ${n} ${t("matchMissing")}`;
   };
 
   const renderGroup = (title: string, items: typeof matches, badgeClass: string) => {
@@ -106,7 +110,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Prompt box */}
+      {/* Prompt box — FAQAT mahsulot qidiruvi */}
       <div className="rounded-3xl border border-[#DB2777]/10 bg-[#DB2777]/5 p-4">
         <div className="flex items-center gap-2 text-[#DB2777]">
           <Sparkles size={16} />
@@ -115,7 +119,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
         {selected.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {selected.map((key) => {
-              const p = getProduct(key);
+              const p = findProduct(products, key);
               return (
                 <button key={key} onClick={() => toggle(key)} className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-xs font-bold text-[#DB2777] shadow-sm">
                   <span>{p?.emoji}</span>
@@ -129,15 +133,13 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
             </button>
           </div>
         ) : (
-          <p className="mt-2 text-xs leading-5 text-slate-600">{format("Masalliqlarni tanlang — sizdagi mahsulotlar bo'yicha taom topamiz.")}</p>
+          <p className="mt-2 text-xs leading-5 text-slate-600">{t("matchSelectIngredients")}</p>
         )}
 
-        {/* ✅ Search — natijalar TAGIDA dropdown */}
         <div className="relative mt-2 border-t border-[#DB2777]/10 pt-2">
           <div className="flex items-center gap-2">
             <Search size={15} className="text-slate-400" />
             <input
-              ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setFocused(true)}
@@ -157,7 +159,6 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
                 >
                   <span className="text-lg">{p.emoji}</span>
                   <span className="flex-1 text-sm font-semibold text-slate-800">{format(p.label)}</span>
-                  {selected.includes(p.key) ? <X size={12} className="text-[#DB2777]" /> : null}
                 </button>
               ))}
             </div>
@@ -165,7 +166,6 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
         </div>
       </div>
 
-      {/* Tugma — yuqorida */}
       <button
         onClick={findMatches}
         disabled={!selected.length || searching}
@@ -175,25 +175,25 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
         {searching ? format("Tanlamoqda...") : `${format("Mos taomlarni topish")} ${selected.length ? `(${selected.length})` : ""}`}
       </button>
 
-      {/* Kategoriyalar + emoji grid (qidiruv bo'sh bo'lsa) */}
       <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
         <button onClick={() => setActiveCat("all")} className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === "all" ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}>
           {t("all")}
         </button>
-        {PRODUCT_CATEGORIES.map((c) => (
+        {categories.map((c) => (
           <button key={c.id} onClick={() => setActiveCat(c.id)} className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === c.id ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}>
             {c.emoji} {format(c.label)}
           </button>
         ))}
       </div>
+
       <div className="grid grid-cols-4 gap-2">
-        {filteredProducts.map((p) => {
+        {gridProducts.map((p) => {
           const sel = selected.includes(p.key);
           return (
             <motion.button key={p.key} whileTap={{ scale: 0.92 }} onClick={() => toggle(p.key)}
               className={cn("flex flex-col items-center gap-1 rounded-2xl border p-2", sel ? "border-[#DB2777] bg-[#DB2777]/10" : "border-slate-100 bg-white shadow-sm")}>
               <span className="text-xl">{p.emoji}</span>
-              <span className={cn("line-clamp-1 text-center text-[10px] font-semibold", sel ? "text-[#DB2777]" : "text-slate-600")}>
+              <span className={cn("line-clamp-2 text-center text-[10px] font-semibold leading-3", sel ? "text-[#DB2777]" : "text-slate-600")}>
                 {format(p.label)}
               </span>
             </motion.button>
@@ -201,7 +201,6 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
         })}
       </div>
 
-      {/* Natijalar */}
       <div ref={resultsRef} className="scroll-mt-20 space-y-5">
         <AnimatePresence>
           {searching ? (
@@ -211,9 +210,7 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: Props) {
           ) : showResults ? (
             <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
               {matches.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-                  {t("matchNoResults")}
-                </div>
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{t("matchNoResults")}</div>
               ) : (
                 <>
                   {renderGroup(`✅ ${t("matchExact")}`, exact, "bg-emerald-50 text-emerald-600 ring-emerald-200")}

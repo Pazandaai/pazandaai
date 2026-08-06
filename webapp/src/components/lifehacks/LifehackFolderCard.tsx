@@ -26,7 +26,7 @@ export default function LifehackFolderCard({
         {getCategoryEmoji(name)}
       </span>
 
-      <h3 className="mt-3 line-clamp-1 font-display text-sm font-bold text-slate-900">
+      <h3 className="mt-3 line-clamp-2 min-h-[32px] font-display text-[13px] font-bold leading-4 text-slate-900">
         {format(name)}
       </h3>
 

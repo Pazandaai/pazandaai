@@ -405,6 +405,27 @@ export default async function handler(
         return res.status(200).json({ ok: true, data: data?.[0] ?? null });
       }
 
+      case "get_product_catalog": {
+        const data = await supabaseFetch("GET", "app_settings", { key: "eq.product_catalog", limit: 1 });
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+      case "save_product_catalog": {
+        const value = payload?.value ?? {};
+        const data = await supabaseFetch(
+          "POST", "app_settings", { on_conflict: "key" },
+          { key: "product_catalog", value },
+          "resolution=merge-duplicates,return=representation",
+        );
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+      case "rename_category": {
+        const oldName = String(payload?.old_name ?? "").trim();
+        const newName = String(payload?.new_name ?? "").trim();
+        if (!oldName || !newName) return res.status(400).json({ ok: false, error: "names required" });
+        await supabaseFetch("PATCH", "recipes", { category: `eq.${oldName}` }, { category: newName }, "return=minimal");
+        return res.status(200).json({ ok: true });
+      }
+
       case "get_banner": {
         const data = await supabaseFetch("GET", "app_settings", {
           key: "eq.home_banner",

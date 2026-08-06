@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { useSession } from "../../hooks/useSession";
 import { adminRequest } from "../../lib/api";
+import { DEFAULT_CATEGORIES, DEFAULT_PRODUCTS } from "../../lib/products";
 import ImageUploader from "./ImageUploader";
 
 const inputClass =
@@ -23,8 +24,8 @@ function ingredientsToLines(list: any[]): string {
       const name = String(i?.name ?? "").trim();
       const qty = typeof i?.quantity === "number" ? String(i.quantity) : "";
       const unit = String(i?.unit ?? "").trim();
-      const parts = [name, qty, unit].filter((p, idx) => !(idx > 0 && p === ""));
-      return parts.join(" | ");
+      if (!name) return "";
+      return [name, qty, unit].filter(Boolean).join(" | ");
     })
     .filter(Boolean)
     .join("\n");
@@ -81,7 +82,7 @@ function AdminInner() {
   const isUserAdmin = isAdmin || user.id === 8544023815;
 
   const [tab, setTab] = useState<
-    "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks" | "catimg"
+    "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks" | "cats" | "products"
   >("stats");
 
   return (
@@ -110,7 +111,8 @@ function AdminInner() {
             { id: "broadcast", label: "📣 Broadcast" },
             { id: "recipes", label: "🍳 Retseptlar" },
             { id: "lifehacks", label: "💡 Lifehacklar" },
-            { id: "catimg", label: "📁 Kategoriya rasmlari" },
+            { id: "cats", label: "📁 Kategoriyalar" },
+            { id: "products", label: "🧺 Mahsulotlar" },
             { id: "banner", label: "🖼 Banner" },
           ].map((item) => (
             <button
@@ -145,7 +147,8 @@ function AdminInner() {
               {tab === "broadcast" ? <BroadcastAdmin /> : null}
               {tab === "recipes" ? <RecipesAdmin /> : null}
               {tab === "lifehacks" ? <LifehacksAdmin /> : null}
-              {tab === "catimg" ? <CategoryImagesAdmin /> : null}
+              {tab === "cats" ? <CategoriesAdmin /> : null}
+              {tab === "products" ? <ProductCatalogAdmin /> : null}
               {tab === "banner" ? <BannerAdmin /> : null}
             </>
           )}
@@ -1462,44 +1465,141 @@ function LifehacksAdmin() {
   );
 }
 
-function CategoryImagesAdmin() {
+function CategoriesAdmin() {
   const { format } = useApp();
-  const [images, setImages] = useState<Record<string, string>>({});
   const [categories, setCategories] = useState<string[]>([]);
-  const [saved, setSaved] = useState(false);
+  const [images, setImages] = useState<Record<string, string>>({});
+  const [names, setNames] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    adminRequest("get_category_images")
-      .then((r) => setImages(r.data?.value ?? {}))
-      .catch(() => {});
-    adminRequest("list_recipes")
-      .then((r) => {
-        const cats = Array.from(new Set((r.data ?? []).map((x: any) => x.category).filter(Boolean)));
-        setCategories(cats as string[]);
-      })
-      .catch(() => {});
-  }, []);
+  const load = async () => {
+    const r = await adminRequest("list_recipes");
+    const cats = Array.from(new Set((r.data ?? []).map((x: any) => x.category).filter(Boolean))) as string[];
+    setCategories(cats);
+    const img = await adminRequest("get_category_images").catch(() => null);
+    setImages(img?.data?.value ?? {});
+  };
+  useEffect(() => { load().catch(() => {}); }, []);
 
-  const save = async () => {
+  const saveImages = async () => {
     await adminRequest("save_category_images", { value: images });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+  };
+  const rename = async (oldName: string) => {
+    const newName = (names[oldName] ?? "").trim();
+    if (!newName || newName === oldName) return;
+    await adminRequest("rename_category", { old_name: oldName, new_name: newName });
+    await load();
   };
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-semibold text-slate-500">
-        {format("Har bir kategoriya (papka) uchun ixtiyoriy rasm yuklang. Rasm yo'q bo'lsa emoji ko'rinadi.")}
-      </p>
       {categories.map((cat) => (
         <div key={cat} className="space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
           <p className="text-sm font-bold text-slate-900">{format(cat)}</p>
-          <ImageUploader
-            value={images[cat] ?? ""}
-            onChange={(url) => setImages((prev) => ({ ...prev, [cat]: url }))}
-          />
+          <ImageUploader value={images[cat] ?? ""} onChange={(url) => setImages((p) => ({ ...p, [cat]: url }))} />
+          <div className="flex gap-2">
+            <input
+              value={names[cat] ?? ""}
+              onChange={(e) => setNames((p) => ({ ...p, [cat]: e.target.value }))}
+              placeholder={format("Yangi nom...")}
+              className={inputClass}
+            />
+            <button onClick={() => rename(cat)} className="shrink-0 rounded-2xl bg-slate-900 px-3 text-xs font-bold text-white">
+              ✏️
+            </button>
+          </div>
         </div>
       ))}
+      <button onClick={saveImages} className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white">
+        {format("Rasmlarni saqlash")}
+      </button>
+    </div>
+  );
+}
+
+function ProductCatalogAdmin() {
+  const { format } = useApp();
+  const [categories, setCategories] = useState<any[]>(DEFAULT_CATEGORIES as any);
+  const [products, setProducts] = useState<any[]>(DEFAULT_PRODUCTS as any);
+  const [activeCat, setActiveCat] = useState("all");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminRequest("get_product_catalog")
+      .then((r) => {
+        const v = r.data?.value;
+        if (v?.categories?.length) setCategories(v.categories);
+        if (v?.products?.length) setProducts(v.products);
+      })
+      .catch(() => {});
+  }, []);
+
+  const patchProduct = (key: string, patch: any) =>
+    setProducts((prev) => prev.map((p) => (p.key === key ? { ...p, ...patch } : p)));
+  const removeProduct = (key: string) => setProducts((prev) => prev.filter((p) => p.key !== key));
+  const addProduct = () =>
+    setProducts((prev) => [
+      ...prev,
+      { key: `p${Date.now()}`, label: "Yangi mahsulot", emoji: "", category: activeCat === "all" ? "pantry" : activeCat },
+    ]);
+  const patchCategory = (id: string, patch: any) =>
+    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  const addCategory = () =>
+    setCategories((prev) => [...prev, { id: `c${Date.now()}`, label: "Yangi kategoriya", emoji: "🧺" }]);
+
+  const save = async () => {
+    await adminRequest("save_product_catalog", { value: { categories, products } });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  const visible = activeCat === "all" ? products : products.filter((p) => p.category === activeCat);
+
+  return (
+    <div className="space-y-3">
+      <div className="no-scrollbar flex gap-2 overflow-x-auto">
+        <button onClick={() => setActiveCat("all")} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${activeCat === "all" ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm"}`}>
+          {format("Barchasi")}
+        </button>
+        {categories.map((c) => (
+          <button key={c.id} onClick={() => setActiveCat(c.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${activeCat === c.id ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm"}`}>
+            {c.emoji} {format(c.label)}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
+        <p className="text-xs font-extrabold text-slate-500">{format("Kategoriyalar (nom/emoji tahrirlash)")}</p>
+        {categories.map((c) => (
+          <div key={c.id} className="flex gap-2">
+            <input value={c.emoji} onChange={(e) => patchCategory(c.id, { emoji: e.target.value })} className={`${inputClass} w-14 text-center`} />
+            <input value={c.label} onChange={(e) => patchCategory(c.id, { label: e.target.value })} className={inputClass} />
+          </div>
+        ))}
+        <button onClick={addCategory} className="h-10 w-full rounded-2xl bg-slate-100 text-xs font-bold text-slate-600">
+          + {format("Kategoriya")}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {visible.map((p) => (
+          <div key={p.key} className="flex items-center gap-2 rounded-3xl border border-slate-100 bg-white p-2.5 shadow-sm">
+            <input value={p.emoji} onChange={(e) => patchProduct(p.key, { emoji: e.target.value })} className={`${inputClass} w-12 text-center`} />
+            <input value={p.label} onChange={(e) => patchProduct(p.key, { label: e.target.value })} className={inputClass} />
+            <select value={p.category} onChange={(e) => patchProduct(p.key, { category: e.target.value })} className={`${inputClass} w-24 shrink-0`}>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.emoji}</option>
+              ))}
+            </select>
+            <button onClick={() => removeProduct(p.key)} className="shrink-0 rounded-xl bg-red-50 p-2 text-red-500">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button onClick={addProduct} className="h-11 w-full rounded-2xl bg-slate-900 text-sm font-bold text-white">
+        + {format("Mahsulot qo'shish")}
+      </button>
       <button onClick={save} className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white">
         {saved ? format("✅ Saqlandi") : format("Saqlash")}
       </button>

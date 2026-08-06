@@ -133,8 +133,9 @@ export default function HomePage() {
       ) : null}
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-display text-base font-extrabold text-slate-900">
+        <div className="flex items-center justify-between border-t border-slate-200/70 pt-4">
+          <h3 className="flex items-center gap-2 font-display text-base font-extrabold text-slate-900">
+            <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-pink-100 text-base">🍳</span>
             {format("Kunlik retseptlar")}
           </h3>
           <button onClick={() => setActiveTab("recipes")} className="text-xs font-bold text-[#DB2777]">
@@ -167,8 +168,9 @@ export default function HomePage() {
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-display text-base font-extrabold text-slate-900">
+        <div className="flex items-center justify-between border-t border-slate-200/70 pt-4">
+          <h3 className="flex items-center gap-2 font-display text-base font-extrabold text-slate-900">
+            <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-amber-100 text-base">💡</span>
             {format("Kunlik lifehacklar")}
           </h3>
           <button onClick={() => setActiveTab("lifehacks")} className="text-xs font-bold text-[#DB2777]">
