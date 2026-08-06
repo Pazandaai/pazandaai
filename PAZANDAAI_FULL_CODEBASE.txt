@@ -3,7 +3,7 @@ Ushbu fayl Telegram Bot hamda React WebApp loyihalarining barcha manba kodlarini
 
 ---
 
-## 📄 bot\.env.example
+## 📄 bot/.env.example
 
 `
 # =========================
@@ -81,7 +81,7 @@ PAYMENT_CARD_HOLDER=
 
 ---
 
-## 📄 bot\requirements.txt
+## 📄 bot/requirements.txt
 
 `
 # Telegram bot framework
@@ -117,7 +117,7 @@ pytz>=2024.1
 
 ---
 
-## 📄 bot\runtime.txt
+## 📄 bot/runtime.txt
 
 `
 python-3.12.7
@@ -126,7 +126,7 @@ python-3.12.7
 
 ---
 
-## 📄 bot\app\__init__.py
+## 📄 bot/app/__init__.py
 
 `python
 # Pazanda AI Bot Package
@@ -135,7 +135,7 @@ python-3.12.7
 
 ---
 
-## 📄 bot\app\config.py
+## 📄 bot/app/config.py
 
 `python
 from functools import lru_cache
@@ -306,7 +306,7 @@ def get_settings() -> Settings:
 
 ---
 
-## 📄 bot\app\main.py
+## 📄 bot/app/main.py
 
 `python
 import asyncio
@@ -425,7 +425,7 @@ if __name__ == "__main__":
 
 ---
 
-## 📄 bot\app\handlers\__init__.py
+## 📄 bot/app/handlers/__init__.py
 
 `python
 # Handlers package
@@ -434,7 +434,7 @@ if __name__ == "__main__":
 
 ---
 
-## 📄 bot\app\handlers\admin.py
+## 📄 bot/app/handlers/admin.py
 
 `python
 import asyncio
@@ -689,7 +689,7 @@ async def admin_system_status(callback: CallbackQuery) -> None:
 
 ---
 
-## 📄 bot\app\handlers\common.py
+## 📄 bot/app/handlers/common.py
 
 `python
 from aiogram import F, Router
@@ -784,7 +784,7 @@ async def unknown_message(message: Message) -> None:
 
 ---
 
-## 📄 bot\app\handlers\common_helpers.py
+## 📄 bot/app/handlers/common_helpers.py
 
 `python
 import logging
@@ -855,7 +855,7 @@ async def edit_callback(
 
 ---
 
-## 📄 bot\app\handlers\premium.py
+## 📄 bot/app/handlers/premium.py
 
 `python
 import logging
@@ -1131,7 +1131,7 @@ async def reject_payment(callback: CallbackQuery) -> None:
 
 ---
 
-## 📄 bot\app\handlers\profile.py
+## 📄 bot/app/handlers/profile.py
 
 `python
 from html import escape
@@ -1222,7 +1222,7 @@ async def toggle_language(callback: CallbackQuery) -> None:
 
 ---
 
-## 📄 bot\app\handlers\start.py
+## 📄 bot/app/handlers/start.py
 
 `python
 import logging
@@ -1295,7 +1295,7 @@ async def choose_language(callback: CallbackQuery) -> None:
 
 ---
 
-## 📄 bot\app\keyboards\__init__.py
+## 📄 bot/app/keyboards/__init__.py
 
 `python
 # Keyboards package
@@ -1304,7 +1304,7 @@ async def choose_language(callback: CallbackQuery) -> None:
 
 ---
 
-## 📄 bot\app\keyboards\inline.py
+## 📄 bot/app/keyboards/inline.py
 
 `python
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -1507,7 +1507,7 @@ def user_ban_kb(user_id: int, is_banned: bool) -> InlineKeyboardMarkup:
 
 ---
 
-## 📄 bot\app\middlewares\__init__.py
+## 📄 bot/app/middlewares/__init__.py
 
 `python
 from app.middlewares.access import BanMiddleware, ThrottlingMiddleware
@@ -1518,7 +1518,7 @@ __all__ = ["BanMiddleware", "ThrottlingMiddleware"]
 
 ---
 
-## 📄 bot\app\middlewares\access.py
+## 📄 bot/app/middlewares/access.py
 
 `python
 import time
@@ -1635,7 +1635,7 @@ class ThrottlingMiddleware(BaseMiddleware):
 
 ---
 
-## 📄 bot\app\services\__init__.py
+## 📄 bot/app/services/__init__.py
 
 `python
 # Services package
@@ -1644,7 +1644,7 @@ class ThrottlingMiddleware(BaseMiddleware):
 
 ---
 
-## 📄 bot\app\services\db.py
+## 📄 bot/app/services/db.py
 
 `python
 import json
@@ -2087,7 +2087,7 @@ db = SupabaseDB()
 
 ---
 
-## 📄 bot\app\services\r2.py
+## 📄 bot/app/services/r2.py
 
 `python
 import uuid
@@ -2141,7 +2141,7 @@ async def upload_screenshot(
 
 ---
 
-## 📄 bot\app\services\scheduler.py
+## 📄 bot/app/services/scheduler.py
 
 `python
 import json
@@ -2243,7 +2243,7 @@ def setup_scheduler(bot) -> AsyncIOScheduler:
 
 ---
 
-## 📄 bot\app\services\translit.py
+## 📄 bot/app/services/translit.py
 
 `python
 import re
@@ -2407,7 +2407,7 @@ def to_lat(text: str) -> str:
 
 ---
 
-## 📄 bot\app\texts\__init__.py
+## 📄 bot/app/texts/__init__.py
 
 `python
 # Texts package
@@ -2416,7 +2416,7 @@ def to_lat(text: str) -> str:
 
 ---
 
-## 📄 bot\app\texts\strings.py
+## 📄 bot/app/texts/strings.py
 
 `python
 from app.services.translit import to_cyr
@@ -2547,7 +2547,7 @@ def tr(lang: str, text: str) -> str:
 
 ---
 
-## 📄 bot\app\utils\__init__.py
+## 📄 bot/app/utils/__init__.py
 
 `python
 # Utils package
@@ -2556,7 +2556,7 @@ def tr(lang: str, text: str) -> str:
 
 ---
 
-## 📄 bot\app\utils\logging.py
+## 📄 bot/app/utils/logging.py
 
 `python
 import logging
@@ -2577,7 +2577,7 @@ def setup_logging() -> None:
 
 ---
 
-## 📄 bot\tests\__init__.py
+## 📄 bot/tests/__init__.py
 
 `python
 # Tests package
@@ -2586,7 +2586,7 @@ def setup_logging() -> None:
 
 ---
 
-## 📄 webapp\.env.example
+## 📄 webapp/.env.example
 
 `
 # =====================================
@@ -2630,7 +2630,7 @@ UPLOAD_MAX_SIZE_MB=10
 
 ---
 
-## 📄 webapp\index.html
+## 📄 webapp/index.html
 
 `html
 <!doctype html>
@@ -2666,7 +2666,7 @@ UPLOAD_MAX_SIZE_MB=10
 
 ---
 
-## 📄 webapp\package-lock.json
+## 📄 webapp/package-lock.json
 
 `json
 {
@@ -7925,7 +7925,7 @@ UPLOAD_MAX_SIZE_MB=10
 
 ---
 
-## 📄 webapp\package.json
+## 📄 webapp/package.json
 
 `json
 {
@@ -7962,7 +7962,7 @@ UPLOAD_MAX_SIZE_MB=10
 
 ---
 
-## 📄 webapp\tsconfig.json
+## 📄 webapp/tsconfig.json
 
 `json
 {
@@ -7990,7 +7990,7 @@ UPLOAD_MAX_SIZE_MB=10
 
 ---
 
-## 📄 webapp\vercel.json
+## 📄 webapp/vercel.json
 
 `json
 {
@@ -8013,7 +8013,7 @@ UPLOAD_MAX_SIZE_MB=10
 
 ---
 
-## 📄 webapp\vite.config.ts
+## 📄 webapp/vite.config.ts
 
 `typescript
 import { defineConfig } from "vite";
@@ -8036,7 +8036,7 @@ export default defineConfig({
 
 ---
 
-## 📄 webapp\api\admin.ts
+## 📄 webapp/api/admin.ts
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
@@ -8469,7 +8469,7 @@ export default async function handler(
 
 ---
 
-## 📄 webapp\api\banner.ts
+## 📄 webapp/api/banner.ts
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
@@ -8507,7 +8507,85 @@ export default async function handler(
 
 ---
 
-## 📄 webapp\api\seed.ts
+## 📄 webapp/api/lifehacks.ts
+
+`typescript
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { supabaseFetch } from "./_lib/supabase.js";
+
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse,
+) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ ok: false, error: "Method not allowed" });
+  }
+
+  try {
+    const data = await supabaseFetch("GET", "lifehacks", {
+      is_published: "eq.true",
+      order: "id.asc",
+      limit: 500,
+    });
+
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=60, stale-while-revalidate=120",
+    );
+
+    return res.status(200).json({ ok: true, data: data ?? [] });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error?.message ?? "Server error",
+    });
+  }
+}
+
+`
+
+---
+
+## 📄 webapp/api/recipes.ts
+
+`typescript
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { supabaseFetch } from "./_lib/supabase.js";
+
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse,
+) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ ok: false, error: "Method not allowed" });
+  }
+
+  try {
+    const data = await supabaseFetch("GET", "recipes", {
+      is_published: "eq.true",
+      order: "id.asc",
+      limit: 500,
+    });
+
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=60, stale-while-revalidate=120",
+    );
+
+    return res.status(200).json({ ok: true, data: data ?? [] });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error?.message ?? "Server error",
+    });
+  }
+}
+
+`
+
+---
+
+## 📄 webapp/api/seed.ts
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
@@ -8551,7 +8629,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 ---
 
-## 📄 webapp\api\upload.ts
+## 📄 webapp/api/upload.ts
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
@@ -8720,7 +8798,7 @@ export default async function handler(
 
 ---
 
-## 📄 webapp\api\verify-admin.ts
+## 📄 webapp/api/verify-admin.ts
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
@@ -8814,7 +8892,7 @@ export default async function handler(
 
 ---
 
-## 📄 webapp\api\_lib\env.ts
+## 📄 webapp/api/_lib/env.ts
 
 `typescript
 export function requireEnv(name: string): string {
@@ -8851,7 +8929,7 @@ export function requireEnv(name: string): string {
 
 ---
 
-## 📄 webapp\api\_lib\r2.ts
+## 📄 webapp/api/_lib/r2.ts
 
 `typescript
 import { createHash, createHmac, randomUUID } from "crypto";
@@ -8966,7 +9044,7 @@ export async function uploadBase64ToR2(options: {
 
 ---
 
-## 📄 webapp\api\_lib\supabase.ts
+## 📄 webapp/api/_lib/supabase.ts
 
 `typescript
 import { requireEnv } from "./env.js";
@@ -9046,7 +9124,7 @@ export async function ensureUser(user: TelegramUser): Promise<void> {
 
 ---
 
-## 📄 webapp\api\_lib\telegram.ts
+## 📄 webapp/api/_lib/telegram.ts
 
 `typescript
 import { createHmac, timingSafeEqual } from "crypto";
@@ -9141,7 +9219,7 @@ export function isAdminUser(user: TelegramUser | null): boolean {
 
 ---
 
-## 📄 webapp\src\App.tsx
+## 📄 webapp/src/App.tsx
 
 `typescript
 import { AnimatePresence, motion } from "motion/react";
@@ -9217,9 +9295,9 @@ export default function App() {
 
 ---
 
-## 📄 webapp\src\index.css
+## 📄 webapp/src/index.css
 
-`
+`css
 @import "tailwindcss";
 
 @layer utilities {
@@ -9283,7 +9361,7 @@ export default function App() {
 
 ---
 
-## 📄 webapp\src\main.tsx
+## 📄 webapp/src/main.tsx
 
 `typescript
 import React from "react";
@@ -9305,7 +9383,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 
 ---
 
-## 📄 webapp\src\vite-env.d.ts
+## 📄 webapp/src/vite-env.d.ts
 
 `typescript
 /// <reference types="vite/client" />
@@ -9314,7 +9392,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 
 ---
 
-## 📄 webapp\src\api\home.ts
+## 📄 webapp/src/api/home.ts
 
 `typescript
 import { supabase } from "../lib/supabase";
@@ -9412,11 +9490,19 @@ export async function fetchHomeBanner(): Promise<HomeBanner | null> {
 
 ---
 
-## 📄 webapp\src\api\lifehacks.ts
+## 📄 webapp/src/api/lifehacks.ts
 
 `typescript
 import { supabase } from "../lib/supabase";
 import type { Lifehack } from "../types/lifehack";
+
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" &&
+  window.location.hostname.includes("localhost")
+    ? "https://pazandaai.vercel.app"
+    : "")
+).replace(/\/$/, "");
 
 const MOCK_LIFEHACKS: Lifehack[] = [
   {
@@ -9464,22 +9550,40 @@ function normalizeRow(row: any): Lifehack {
 }
 
 export async function fetchLifehacks(): Promise<Lifehack[]> {
+  // 1) API endpoint orqali (VITE env & RLS dan xoli)
+  try {
+    const res = await fetch(`${API_BASE}/api/lifehacks`, { cache: "no-store" });
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
+        return json.data.map(normalizeRow);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) Fallback — Client Supabase
   if (!supabase) {
     return MOCK_LIFEHACKS;
   }
 
-  const { data, error } = await supabase
-    .from("lifehacks")
-    .select("*")
-    .eq("is_published", true)
-    .order("id", { ascending: true })
-    .limit(500);
+  try {
+    const { data, error } = await supabase
+      .from("lifehacks")
+      .select("*")
+      .eq("is_published", true)
+      .order("id", { ascending: true })
+      .limit(500);
 
-  if (error) {
-    throw error;
+    if (error || !data || data.length === 0) {
+      return MOCK_LIFEHACKS;
+    }
+
+    return data.map(normalizeRow);
+  } catch {
+    return MOCK_LIFEHACKS;
   }
-
-  return (data ?? []).map(normalizeRow);
 }
 
 export function getLifehackCategories(lifehacks: Lifehack[]): string[] {
@@ -9498,11 +9602,19 @@ export function getLifehackCategories(lifehacks: Lifehack[]): string[] {
 
 ---
 
-## 📄 webapp\src\api\recipes.ts
+## 📄 webapp/src/api/recipes.ts
 
 `typescript
 import { supabase } from "../lib/supabase";
 import type { Recipe, RecipeIngredient, RecipeStep } from "../types";
+
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" &&
+  window.location.hostname.includes("localhost")
+    ? "https://pazandaai.vercel.app"
+    : "")
+).replace(/\/$/, "");
 
 const MOCK_RECIPES: Recipe[] = [
   {
@@ -9607,29 +9719,47 @@ function normalizeRecipe(row: any): Recipe {
 }
 
 export async function fetchRecipes(): Promise<Recipe[]> {
+  // 1) API endpoint orqali (VITE env & RLS dan xoli)
+  try {
+    const res = await fetch(`${API_BASE}/api/recipes`, { cache: "no-store" });
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
+        return json.data.map(normalizeRecipe);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) Fallback — Client Supabase
   if (!supabase) {
     return MOCK_RECIPES;
   }
 
-  const { data, error } = await supabase
-    .from("recipes")
-    .select("*")
-    .eq("is_published", true)
-    .order("id", { ascending: true })
-    .limit(500);
+  try {
+    const { data, error } = await supabase
+      .from("recipes")
+      .select("*")
+      .eq("is_published", true)
+      .order("id", { ascending: true })
+      .limit(500);
 
-  if (error) {
-    throw error;
+    if (error || !data || data.length === 0) {
+      return MOCK_RECIPES;
+    }
+
+    return data.map(normalizeRecipe);
+  } catch {
+    return MOCK_RECIPES;
   }
-
-  return (data ?? []).map(normalizeRecipe);
 }
 
 `
 
 ---
 
-## 📄 webapp\src\components\BottomNav.tsx
+## 📄 webapp/src/components/BottomNav.tsx
 
 `typescript
 import { BookOpen, Home, Lightbulb, User, type LucideIcon } from "lucide-react";
@@ -9737,7 +9867,7 @@ export default function BottomNav() {
 
 ---
 
-## 📄 webapp\src\components\DynamicIsland.tsx
+## 📄 webapp/src/components/DynamicIsland.tsx
 
 `typescript
 import { Timer } from "lucide-react";
@@ -9771,7 +9901,7 @@ export default function DynamicIsland() {
 
 ---
 
-## 📄 webapp\src\components\Header.tsx
+## 📄 webapp/src/components/Header.tsx
 
 `typescript
 import { ChefHat, Crown, ShoppingBag } from "lucide-react";
@@ -9886,7 +10016,7 @@ export default function Header() {
 
 ---
 
-## 📄 webapp\src\components\PlaceholderPage.tsx
+## 📄 webapp/src/components/PlaceholderPage.tsx
 
 `typescript
 import type { LucideIcon } from "lucide-react";
@@ -9934,7 +10064,7 @@ export default function PlaceholderPage({
 
 ---
 
-## 📄 webapp\src\components\admin\AdminOverlay.tsx
+## 📄 webapp/src/components/admin/AdminOverlay.tsx
 
 `typescript
 import { Plus, Trash2, X } from "lucide-react";
@@ -11317,7 +11447,7 @@ export default function AdminOverlay() {
 
 ---
 
-## 📄 webapp\src\components\admin\ImageUploader.tsx
+## 📄 webapp/src/components/admin/ImageUploader.tsx
 
 `typescript
 import { CheckCircle2, ExternalLink, ImagePlus, Loader2 } from "lucide-react";
@@ -11471,7 +11601,7 @@ export default function ImageUploader({
 
 ---
 
-## 📄 webapp\src\components\home\BannerCarousel.tsx
+## 📄 webapp/src/components/home/BannerCarousel.tsx
 
 `typescript
 import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
@@ -11616,7 +11746,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
 
 ---
 
-## 📄 webapp\src\components\lifehacks\LifehackCard.tsx
+## 📄 webapp/src/components/lifehacks/LifehackCard.tsx
 
 `typescript
 import { ChevronDown, Copy } from "lucide-react";
@@ -11733,7 +11863,7 @@ export default function LifehackCard({ lifehack }: LifehackCardProps) {
 
 ---
 
-## 📄 webapp\src\components\lifehacks\LifehackFolderCard.tsx
+## 📄 webapp/src/components/lifehacks/LifehackFolderCard.tsx
 
 `typescript
 import { motion } from "motion/react";
@@ -11779,7 +11909,7 @@ export default function LifehackFolderCard({
 
 ---
 
-## 📄 webapp\src\components\modals\BozorlikModal.tsx
+## 📄 webapp/src/components/modals/BozorlikModal.tsx
 
 `typescript
 import { Check, Plus, Trash2 } from "lucide-react";
@@ -11910,7 +12040,7 @@ export default function BozorlikModal() {
 
 ---
 
-## 📄 webapp\src\components\modals\PremiumModal.tsx
+## 📄 webapp/src/components/modals/PremiumModal.tsx
 
 `typescript
 import { Upload } from "lucide-react";
@@ -12079,7 +12209,7 @@ export default function PremiumModal() {
 
 ---
 
-## 📄 webapp\src\components\modals\TimerModal.tsx
+## 📄 webapp/src/components/modals/TimerModal.tsx
 
 `typescript
 import { Pause, Play, RotateCcw } from "lucide-react";
@@ -12190,7 +12320,7 @@ export default function TimerModal() {
 
 ---
 
-## 📄 webapp\src\components\recipes\RecipeCard.tsx
+## 📄 webapp/src/components/recipes/RecipeCard.tsx
 
 `typescript
 import { ChefHat, Clock3, Heart } from "lucide-react";
@@ -12306,7 +12436,7 @@ export default function RecipeCard({
 
 ---
 
-## 📄 webapp\src\components\recipes\RecipeFilters.tsx
+## 📄 webapp/src/components/recipes/RecipeFilters.tsx
 
 `typescript
 import { Search } from "lucide-react";
@@ -12475,7 +12605,7 @@ export default function RecipeFilters({
 
 ---
 
-## 📄 webapp\src\components\recipes\RecipeModal.tsx
+## 📄 webapp/src/components/recipes/RecipeModal.tsx
 
 `typescript
 import {
@@ -12795,7 +12925,7 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
 
 ---
 
-## 📄 webapp\src\components\recipes\SmartMatchPanel.tsx
+## 📄 webapp/src/components/recipes/SmartMatchPanel.tsx
 
 `typescript
 import { Sparkles, X } from "lucide-react";
@@ -13000,7 +13130,7 @@ export default function SmartMatchPanel({
 
 ---
 
-## 📄 webapp\src\components\ui\ModalShell.tsx
+## 📄 webapp/src/components/ui/ModalShell.tsx
 
 `typescript
 import { X } from "lucide-react";
@@ -13071,7 +13201,7 @@ export default function ModalShell({
 
 ---
 
-## 📄 webapp\src\context\AppContext.tsx
+## 📄 webapp/src/context/AppContext.tsx
 
 `typescript
 import {
@@ -13524,7 +13654,7 @@ export function useApp(): AppContextValue {
 
 ---
 
-## 📄 webapp\src\hooks\useSession.ts
+## 📄 webapp/src/hooks/useSession.ts
 
 `typescript
 import { useCallback, useEffect, useState } from "react";
@@ -13610,7 +13740,7 @@ export function useSession() {
 
 ---
 
-## 📄 webapp\src\lib\api.ts
+## 📄 webapp/src/lib/api.ts
 
 `typescript
 import { compressImage } from "./compress";
@@ -13772,7 +13902,7 @@ export async function adminRequest(
 
 ---
 
-## 📄 webapp\src\lib\compress.ts
+## 📄 webapp/src/lib/compress.ts
 
 `typescript
 interface CompressOptions {
@@ -13904,7 +14034,7 @@ export async function compressImage(
 
 ---
 
-## 📄 webapp\src\lib\i18n.ts
+## 📄 webapp/src/lib/i18n.ts
 
 `typescript
 import { convertByScript } from "./translit";
@@ -14017,7 +14147,7 @@ export function translate(
 
 ---
 
-## 📄 webapp\src\lib\lifehack-utils.ts
+## 📄 webapp/src/lib/lifehack-utils.ts
 
 `typescript
 import { toLat } from "./translit";
@@ -14097,7 +14227,7 @@ export function getCategoryEmoji(category?: string): string {
 
 ---
 
-## 📄 webapp\src\lib\recipe-utils.ts
+## 📄 webapp/src/lib/recipe-utils.ts
 
 `typescript
 import type {
@@ -14271,7 +14401,7 @@ export function getUniqueIngredients(recipes: Recipe[]): string[] {
 
 ---
 
-## 📄 webapp\src\lib\supabase.ts
+## 📄 webapp/src/lib/supabase.ts
 
 `typescript
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -14290,7 +14420,7 @@ export const supabase: SupabaseClient | null =
 
 ---
 
-## 📄 webapp\src\lib\telegram.ts
+## 📄 webapp/src/lib/telegram.ts
 
 `typescript
 export const tg =
@@ -14405,7 +14535,7 @@ export function onBackButton(callback: () => void): () => void {
 
 ---
 
-## 📄 webapp\src\lib\translit.ts
+## 📄 webapp/src/lib/translit.ts
 
 `typescript
 type Pair = [string, string];
@@ -14591,7 +14721,7 @@ export function convertByScript(text: string, script: "latn" | "kyr"): string {
 
 ---
 
-## 📄 webapp\src\lib\utils.ts
+## 📄 webapp/src/lib/utils.ts
 
 `typescript
 export function cn(
@@ -14621,7 +14751,7 @@ export function makeId(): string {
 
 ---
 
-## 📄 webapp\src\pages\HomePage.tsx
+## 📄 webapp/src/pages/HomePage.tsx
 
 `typescript
 import { Search } from "lucide-react";
@@ -14889,7 +15019,7 @@ export default function HomePage() {
 
 ---
 
-## 📄 webapp\src\pages\LifehacksPage.tsx
+## 📄 webapp/src/pages/LifehacksPage.tsx
 
 `typescript
 import { ChevronLeft, Lightbulb, Search, SearchX } from "lucide-react";
@@ -15111,7 +15241,7 @@ export default function LifehacksPage() {
 
 ---
 
-## 📄 webapp\src\pages\ProfilePage.tsx
+## 📄 webapp/src/pages/ProfilePage.tsx
 
 `typescript
 import { useMemo } from "react";
@@ -15259,7 +15389,7 @@ export default function ProfilePage() {
 
 ---
 
-## 📄 webapp\src\pages\RecipesPage.tsx
+## 📄 webapp/src/pages/RecipesPage.tsx
 
 `typescript
 import { useEffect, useMemo, useState } from "react";
@@ -15434,7 +15564,7 @@ export default function RecipesPage() {
 
 ---
 
-## 📄 webapp\src\types\index.ts
+## 📄 webapp/src/types/index.ts
 
 `typescript
 export type Script = "latn" | "kyr";
@@ -15504,7 +15634,7 @@ export interface TimerState {
 
 ---
 
-## 📄 webapp\src\types\lifehack.ts
+## 📄 webapp/src/types/lifehack.ts
 
 `typescript
 export interface Lifehack {
@@ -15519,7 +15649,7 @@ export interface Lifehack {
 
 ---
 
-## 📄 webapp\src\types\telegram.d.ts
+## 📄 webapp/src/types/telegram.d.ts
 
 `typescript
 export {};

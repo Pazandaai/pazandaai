@@ -23,65 +23,59 @@ export function parseInitDataUser(initData: string): TelegramUser | null {
   }
 }
 
+/**
+ * Telegram initData ni HMAC-SHA256 bilan to'liq tekshiradi.
+ * XAVFSIZLIK: hash mos kelmasa yoki xato bo'lsa — null (hech qanday fallback yo'q).
+ */
 export function verifyInitData(
   initData: string,
   botToken: string,
 ): TelegramUser | null {
   try {
     if (!initData || !botToken) return null;
-
     const cleanData = String(initData).replace(/^\uFEFF/, "").trim();
     const cleanToken = String(botToken).replace(/^\uFEFF/, "").trim();
-
     const params = new URLSearchParams(cleanData);
     const hash = params.get("hash");
     if (!hash) return null;
 
     params.delete("hash");
-
     const pairs: string[] = [];
     params.forEach((value, key) => {
       pairs.push(`${key}=${value}`);
     });
     pairs.sort();
-
     const dataCheckString = pairs.join("\n");
 
     const secretKey = createHmac("sha256", "WebAppData")
       .update(cleanToken)
       .digest();
-
-    const calculatedHash = createHmac("sha256", secretKey as unknown as string)
+    const calculatedHash = createHmac("sha256", secretKey)
       .update(dataCheckString)
       .digest("hex");
 
     const a = Buffer.from(calculatedHash, "hex");
     const b = Buffer.from(hash, "hex");
-
-    if (a.length !== b.length || !timingSafeEqual(a as unknown as Uint8Array, b as unknown as Uint8Array)) {
-      const user = parseInitDataUser(cleanData);
-      if (isAdminUser(user)) {
-        return user;
-      }
-      console.warn("[verify] HMAC mismatch, hash:", hash.slice(0, 16));
+    if (
+      a.length !== b.length ||
+      !timingSafeEqual(a as unknown as Uint8Array, b as unknown as Uint8Array)
+    ) {
+      console.warn("[verify] HMAC mismatch — soxta initData rad etildi");
       return null;
     }
-
     return parseInitDataUser(cleanData);
   } catch (err) {
     console.error("[verify] error:", err);
-    return parseInitDataUser(initData);
+    return null;
   }
 }
 
 export function isAdminUser(user: TelegramUser | null): boolean {
   if (!user) return false;
-
-  const adminIds = (process.env.ADMIN_ID || "8544023815")
+  const adminIds = (process.env.ADMIN_ID || "")
     .replace(/^\uFEFF/, "")
     .split(",")
     .map((v) => Number(v.trim()))
     .filter(Boolean);
-
   return adminIds.includes(user.id);
 }
