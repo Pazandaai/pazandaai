@@ -50,7 +50,7 @@ export function verifyInitData(
     const secretKey = createHmac("sha256", "WebAppData")
       .update(cleanToken)
       .digest();
-    const calculatedHash = createHmac("sha256", secretKey)
+    const calculatedHash = createHmac("sha256", secretKey as any)
       .update(dataCheckString)
       .digest("hex");
 
