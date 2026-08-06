@@ -44,7 +44,7 @@ export function toNumber(raw: string): number | null {
 // O'LCHOV BIRLIKLARI
 // =====================
 const UNITS =
-  "osh qoshiq|choy qoshiq|stakan|dona|banka|so'ta|shoxcha|varaq|dasta|bog'|chimdim|tish|quti|kg|gr|ml|l|g";
+  "osh qoshiq|choy qoshiq|stakan|dona|banka|so'ta|shoxcha|varaq|dasta|bog'|chimdim|tish|quti|bo'lak|litr|kg|gr|ml|l|g";
 const NUM = "[0-9¼½¾⅓⅔][0-9¼½¾⅓⅔.,\\s/–-]*";
 
 // "(1kg)" / "(800 g)" / "(2 dona)" — oxiridagi qavs
@@ -53,7 +53,7 @@ const PAREN_RE = new RegExp(
   "i",
 );
 // "225 g ..." / "1 dona ..." / "1 ¼ stakan ..." — boshidagi miqdor
-const LEAD_RE = new RegExp(`^(${NUM})\\s*(${UNITS})(?=\\s|$)`, "i");
+const LEAD_RE = new RegExp(`^(${NUM})\\s*(${UNITS})?(?=\\s|$)`, "i");
 // LEAD dan keyin qolgan "(400 g)" kabi qavs
 const LEAD_PAREN_RE = new RegExp(
   `^\\(\\s*(${NUM})\\s*(kg|gr|g|ml|l)[^)]*\\)`,
@@ -75,11 +75,21 @@ function normalizeUnit(raw: string): string {
   if (u.startsWith("chimdim")) return "chimdim";
   if (u.startsWith("tish")) return "tish";
   if (u.startsWith("quti")) return "quti";
+  if (u.startsWith("bo'lak")) return "bo'lak";
   if (u === "kg") return "kg";
   if (u === "gr" || u === "g") return "g";
   if (u === "ml") return "ml";
-  if (u === "l") return "l";
+  if (u === "l" || u === "litr") return "l";
   return u;
+}
+
+function isHeaderOrNoise(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (/bosqich/i.test(t)) return true;
+  if (/:\s*$/.test(t) && !/[0-9¼½¾⅓⅔]/.test(t)) return true;
+  if (/\buchun\s*$/i.test(t) && !/[0-9¼½¾⅓⅔]/.test(t)) return true;
+  return false;
 }
 
 // =====================
@@ -91,10 +101,19 @@ export function parseSingleIngredient(line: string): RecipeIngredient {
     .trim()
     .replace(/\.$/, "")
     .trim();
-  if (!text) return { name: "" };
+  if (!text || isHeaderOrNoise(text)) return { name: "" };
 
-  // "yarim" / "chorak" so'zlarini kasrga aylantirish
-  text = text.replace(/^yarim\s+/i, "½ ").replace(/^chorak\s+/i, "¼ ");
+  // "Korj: 2 stakan un" kabi prefikslarni olib tashlash
+  text = text.replace(/^([^\d:]{2,30}):\s+/, "");
+
+  // Words to numbers conversion
+  text = text
+    .replace(/^yarim\s+/i, "½ ")
+    .replace(/^chorak\s+/i, "¼ ")
+    .replace(/^bir\s+chimdim\s+/i, "1 chimdim ")
+    .replace(/^bir\s+siqim\s+/i, "1 siqim ")
+    .replace(/^bir\s+bo'lak\s+/i, "1 bo'lak ")
+    .replace(/^bir\s+dona\s+/i, "1 dona ");
 
   let quantity: number | null = null;
   let unit: string | null = null;
@@ -108,7 +127,7 @@ export function parseSingleIngredient(line: string): RecipeIngredient {
     const lead = text.match(LEAD_RE);
     if (lead) {
       quantity = toNumber(lead[1]);
-      unit = normalizeUnit(lead[2]);
+      unit = lead[2] ? normalizeUnit(lead[2]) : null;
       text = text.slice(lead[0].length).trim();
     }
     const leadParen = text.match(LEAD_PAREN_RE);
@@ -119,34 +138,36 @@ export function parseSingleIngredient(line: string): RecipeIngredient {
     }
   }
 
-  text = text.replace(/\(\s*\)/g, "").replace(/\s+/g, " ").trim();
-  if (!text) return { name: unifyApostrophes(line).trim(), quantity, unit };
+  // Remove trailing amounts or numbers left over
+  text = text.replace(/^[0-9¼½¾⅓⅔][0-9¼½¾⅓⅔.,\s/–-]*\s*/, "");
+  // Remove parenthetical descriptions like (ingichka somoncha to'g'ralgan)
+  text = text.replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+  text = text.replace(/^[\s,.:;—-]+|[\s,.:;—-]+$/g, "").trim();
+
+  if (!text || isHeaderOrNoise(text)) return { name: "", quantity: null, unit: null };
   return { name: text, quantity, unit };
 }
 
 // =====================
-// ENTRY (singan \n larni bo'lish)
+// ENTRY (singan \n va va/hamda larni bo'lish)
 // =====================
 export function parseIngredientEntry(raw: any): RecipeIngredient[] {
   const rawName = String(raw?.name ?? "");
   const lines = rawName
-    .split(/\\n|\n/)
+    .split(/\\n|\n|\s+va\s+|\s+hamda\s+|;\s*|\.\s+(?=[A-Z0-9])/)
     .map((l) => l.trim())
     .filter(Boolean);
   if (!lines.length) return [];
 
   const out: RecipeIngredient[] = [];
-  for (let line of lines) {
-    // Bo'lim sarlavhasi: ":" bilan tugaydi, raqam yo'q → o'tkazib yuboramiz
-    if (/:\s*$/.test(line) && !/[0-9¼½¾⅓⅔]/.test(line)) continue;
-    // "Korj: 2 stakan ..." kabi prefikslarni olib tashlash
-    const prefix = line.match(/^([^\d:]{2,24}):\s+(.+)$/);
-    if (prefix) line = prefix[2];
+  for (const line of lines) {
+    if (isHeaderOrNoise(line)) continue;
     const parsed = parseSingleIngredient(line);
-    if (parsed.name) out.push(parsed);
+    if (parsed.name && parsed.name.length > 1) {
+      out.push(parsed);
+    }
   }
 
-  // Agar DB da quantity/unit allaqachon bor bo'lsa — saqlab qolamiz
   if (out.length === 1 && typeof raw?.quantity === "number") {
     out[0].quantity = raw.quantity;
     out[0].unit = raw?.unit ?? out[0].unit ?? null;
@@ -251,9 +272,11 @@ export function getUniqueIngredients(recipes: Recipe[]): string[] {
   const map = new Map<string, string>();
   for (const recipe of recipes) {
     for (const ingredient of recipe.ingredients) {
-      const normalized = normalizeIngredient(ingredient.name);
-      if (normalized && !map.has(normalized)) {
-        map.set(normalized, ingredient.name.trim());
+      const name = ingredient.name ? ingredient.name.trim() : "";
+      if (!name || isHeaderOrNoise(name)) continue;
+      const normalized = normalizeIngredient(name);
+      if (normalized && normalized.length > 1 && !map.has(normalized)) {
+        map.set(normalized, name);
       }
     }
   }

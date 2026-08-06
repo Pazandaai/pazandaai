@@ -582,7 +582,10 @@ async def admin_broadcast_execute(message: Message, state: FSMContext) -> None:
 
         try:
             translated_text = t(user_lang, broadcast_text) if user_lang != "latn" else broadcast_text
-            await message.bot.send_message(user_id, translated_text)
+            try:
+                await message.bot.send_message(user_id, translated_text)
+            except Exception:
+                await message.bot.send_message(user_id, translated_text, parse_mode=None)
             sent_count += 1
             await asyncio.sleep(0.05)
         except Exception:
@@ -2147,6 +2150,9 @@ async def upload_screenshot(
 import json
 import logging
 from datetime import datetime, timezone
+
+from html import escape
+
 from io import BytesIO
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -2176,8 +2182,10 @@ async def send_daily_recipe(bot) -> None:
                 pass
             continue
 
-        title = t(lang, recipe["title"]) if lang == "kyr" else recipe["title"]
-        desc = t(lang, recipe["description"]) if recipe.get("description") and lang == "kyr" else recipe.get("description", "")
+        raw_title = t(lang, recipe["title"]) if lang == "kyr" else recipe["title"]
+        raw_desc = t(lang, recipe["description"]) if recipe.get("description") and lang == "kyr" else recipe.get("description", "")
+        title = escape(str(raw_title))
+        desc = escape(str(raw_desc))
         cook_time = recipe.get("cook_time_minutes", 30)
 
         caption = (
@@ -2269,6 +2277,7 @@ _LAT_MULTI = [
 _LAT_SINGLE = {
     "a": "а",
     "b": "б",
+    "c": "с",
     "d": "д",
     "e": "е",
     "f": "ф",
@@ -14046,6 +14055,10 @@ const STRINGS = {
   noLifehacks: "Maslahatlar topilmadi",
   lifehackEmptyFolder: "Bu papkada maslahatlar yo‘q",
   countSuffix: "ta",
+
+  filters: "Filtrlar",
+  filtersApply: "Ko'rsatish",
+  matchFind: "Mos taomni topish",
 } as const;
 
 export type I18nKey = keyof typeof STRINGS;
