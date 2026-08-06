@@ -146,7 +146,7 @@ export default function ProfilePage() {
       ) : null}
 
       <div className="flex items-center justify-center gap-1 text-center text-xs font-semibold text-slate-400">
-        <Info size={13} /> Pazanda AI v1.2.0 • WebApp
+        <Info size={13} /> Pazanda AI v2.2 • Bot API 10.2 ready
       </div>
     </div>
   );

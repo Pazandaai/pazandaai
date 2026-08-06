@@ -10,6 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pytz import timezone as pytz_timezone
 
 from app.config import get_settings
+from app.services.api_ext import send_recipe_message
 from app.services.db import db
 from app.texts.strings import t
 
@@ -46,10 +47,7 @@ async def send_daily_recipe(bot) -> None:
         )
 
         try:
-            if recipe.get("image_url"):
-                await bot.send_photo(user_id, photo=recipe["image_url"], caption=caption)
-            else:
-                await bot.send_message(user_id, caption)
+            await send_recipe_message(bot, user_id, caption, recipe.get("image_url"))
         except Exception:
             pass
 

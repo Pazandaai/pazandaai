@@ -5,7 +5,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from app.config import get_settings
-from app.handlers.common_helpers import ensure_user, get_lang
+from app.handlers.common_helpers import ensure_user, get_lang, invalidate_lang_cache
 from app.keyboards.inline import language_kb, main_menu_kb
 from app.services.db import db
 from app.texts.strings import t
@@ -42,8 +42,15 @@ async def start(message: Message) -> None:
         return
 
     try:
+        existing = await db.get_user(message.from_user.id)
         user = await ensure_user(message.from_user)
         language = (user.get("language") if isinstance(user, dict) else None) or "latn"
+
+        if existing is None:
+            await message.answer(
+                t(language, "choose_language"),
+                reply_markup=language_kb(),
+            )
 
         await message.answer(
             t(language, "main_menu"),
@@ -68,6 +75,7 @@ async def choose_language(callback: CallbackQuery) -> None:
         await ensure_user(callback.from_user)
         try:
             await db.set_language(callback.from_user.id, language)
+            invalidate_lang_cache(callback.from_user.id)
         except Exception as e:
             logging.warning(f"set_language error: {e}")
 

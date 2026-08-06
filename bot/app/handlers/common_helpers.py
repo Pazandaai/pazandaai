@@ -10,6 +10,10 @@ settings = get_settings()
 _LANG_CACHE: dict[int, tuple[float, str]] = {}
 
 
+def invalidate_lang_cache(user_id: int) -> None:
+    _LANG_CACHE.pop(user_id, None)
+
+
 def is_admin(user_id: int) -> bool:
     return user_id == settings.ADMIN_ID
 
