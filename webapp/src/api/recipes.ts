@@ -1,6 +1,14 @@
 import { supabase } from "../lib/supabase";
 import type { Recipe, RecipeIngredient, RecipeStep } from "../types";
 
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" &&
+  window.location.hostname.includes("localhost")
+    ? "https://pazandaai.vercel.app"
+    : "")
+).replace(/\/$/, "");
+
 const MOCK_RECIPES: Recipe[] = [
   {
     id: 1,
@@ -104,20 +112,38 @@ function normalizeRecipe(row: any): Recipe {
 }
 
 export async function fetchRecipes(): Promise<Recipe[]> {
+  // 1) API endpoint orqali (VITE env & RLS dan xoli)
+  try {
+    const res = await fetch(`${API_BASE}/api/recipes`, { cache: "no-store" });
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
+        return json.data.map(normalizeRecipe);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) Fallback — Client Supabase
   if (!supabase) {
     return MOCK_RECIPES;
   }
 
-  const { data, error } = await supabase
-    .from("recipes")
-    .select("*")
-    .eq("is_published", true)
-    .order("id", { ascending: true })
-    .limit(500);
+  try {
+    const { data, error } = await supabase
+      .from("recipes")
+      .select("*")
+      .eq("is_published", true)
+      .order("id", { ascending: true })
+      .limit(500);
 
-  if (error) {
-    throw error;
+    if (error || !data || data.length === 0) {
+      return MOCK_RECIPES;
+    }
+
+    return data.map(normalizeRecipe);
+  } catch {
+    return MOCK_RECIPES;
   }
-
-  return (data ?? []).map(normalizeRecipe);
 }

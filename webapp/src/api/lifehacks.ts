@@ -1,6 +1,14 @@
 import { supabase } from "../lib/supabase";
 import type { Lifehack } from "../types/lifehack";
 
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" &&
+  window.location.hostname.includes("localhost")
+    ? "https://pazandaai.vercel.app"
+    : "")
+).replace(/\/$/, "");
+
 const MOCK_LIFEHACKS: Lifehack[] = [
   {
     id: 1,
@@ -47,22 +55,40 @@ function normalizeRow(row: any): Lifehack {
 }
 
 export async function fetchLifehacks(): Promise<Lifehack[]> {
+  // 1) API endpoint orqali (VITE env & RLS dan xoli)
+  try {
+    const res = await fetch(`${API_BASE}/api/lifehacks`, { cache: "no-store" });
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
+        return json.data.map(normalizeRow);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) Fallback — Client Supabase
   if (!supabase) {
     return MOCK_LIFEHACKS;
   }
 
-  const { data, error } = await supabase
-    .from("lifehacks")
-    .select("*")
-    .eq("is_published", true)
-    .order("id", { ascending: true })
-    .limit(500);
+  try {
+    const { data, error } = await supabase
+      .from("lifehacks")
+      .select("*")
+      .eq("is_published", true)
+      .order("id", { ascending: true })
+      .limit(500);
 
-  if (error) {
-    throw error;
+    if (error || !data || data.length === 0) {
+      return MOCK_LIFEHACKS;
+    }
+
+    return data.map(normalizeRow);
+  } catch {
+    return MOCK_LIFEHACKS;
   }
-
-  return (data ?? []).map(normalizeRow);
 }
 
 export function getLifehackCategories(lifehacks: Lifehack[]): string[] {
