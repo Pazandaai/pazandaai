@@ -2505,6 +2505,28 @@ services:
 
 `
 
+# vercel.json
+`
+{
+  "services": {
+    "pazanda-bot": {
+      "root": "bot",
+      "buildCommand": "pip install -r requirements.txt"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "pazanda-bot"
+      }
+    }
+  ]
+}
+
+`
+
 # bot\.env.example
 `
 # =========================
