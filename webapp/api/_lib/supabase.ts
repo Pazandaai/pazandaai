@@ -8,10 +8,14 @@ export async function supabaseFetch(
   body?: unknown,
   prefer?: string,
 ): Promise<any> {
-  const supabaseUrl = requireEnv("SUPABASE_URL");
-  const serviceKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+  let rawUrl = (requireEnv("SUPABASE_URL") || "").trim();
 
-  const url = new URL(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/${table}`);
+  if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+    rawUrl = `https://${rawUrl}`;
+  }
+
+  const supabaseUrl = rawUrl.replace(/\/$/, "");
+  const url = new URL(`${supabaseUrl}/rest/v1/${table}`);
 
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -20,8 +24,8 @@ export async function supabaseFetch(
   }
 
   const headers: Record<string, string> = {
-    apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`,
+    apikey: requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    Authorization: `Bearer ${requireEnv("SUPABASE_SERVICE_ROLE_KEY")}`,
     Accept: "application/json",
   };
 

@@ -1,7 +1,7 @@
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
 
-import { requireEnv } from "./env";
+import { requireEnv } from "./env.js";
 
 function getExtension(contentType: string): string {
   if (contentType.includes("png")) return "png";
@@ -16,11 +16,15 @@ export async function uploadBase64ToR2(options: {
   keyPrefix: string;
   userId: number;
 }): Promise<string> {
-  const accountId = requireEnv("R2_ACCOUNT_ID");
-  const accessKeyId = requireEnv("R2_ACCESS_KEY_ID");
-  const secretAccessKey = requireEnv("R2_SECRET_ACCESS_KEY");
-  const bucket = requireEnv("R2_BUCKET_NAME");
-  const publicBaseUrl = requireEnv("R2_PUBLIC_BASE_URL");
+  const accountId = requireEnv("R2_ACCOUNT_ID").trim();
+  const accessKeyId = requireEnv("R2_ACCESS_KEY_ID").trim();
+  const secretAccessKey = requireEnv("R2_SECRET_ACCESS_KEY").trim();
+  const bucket = requireEnv("R2_BUCKET_NAME").trim();
+  let publicBaseUrl = requireEnv("R2_PUBLIC_BASE_URL").trim();
+
+  if (!publicBaseUrl.startsWith("http://") && !publicBaseUrl.startsWith("https://")) {
+    publicBaseUrl = `https://${publicBaseUrl}`;
+  }
 
   const client = new S3Client({
     region: "auto",
