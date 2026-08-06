@@ -9,6 +9,71 @@ import ImageUploader from "./ImageUploader";
 const inputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#DB2777]/40";
 
+function parseMaybeJson(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try { const p = JSON.parse(value); return Array.isArray(p) ? p : []; } catch { return []; }
+  }
+  return [];
+}
+
+function ingredientsToLines(list: any[]): string {
+  return list
+    .map((i) => {
+      const name = String(i?.name ?? "").trim();
+      const qty = typeof i?.quantity === "number" ? String(i.quantity) : "";
+      const unit = String(i?.unit ?? "").trim();
+      const parts = [name, qty, unit].filter((p, idx) => !(idx > 0 && p === ""));
+      return parts.join(" | ");
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function linesToIngredients(text: string): any[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) {
+    try { const arr = JSON.parse(trimmed); if (Array.isArray(arr)) return arr; } catch {}
+  }
+  return trimmed.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const parts = line.split("|").map((s) => s.trim());
+    const [name, qty, unit] = parts;
+    const item: any = { name: name || line };
+    if (qty) {
+      const num = Number(qty.replace(",", "."));
+      if (!Number.isNaN(num)) item.quantity = num;
+      else item.name = `${name} (${qty})`;
+    }
+    if (unit) item.unit = unit;
+    return item;
+  });
+}
+
+function stepsToLines(list: any[]): string {
+  return list
+    .map((s) => {
+      const text = String(s?.text ?? "").trim();
+      const timer = typeof s?.timer_seconds === "number" && s.timer_seconds ? ` | ${s.timer_seconds}` : "";
+      return text + timer;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function linesToSteps(text: string): any[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) {
+    try { const arr = JSON.parse(trimmed); if (Array.isArray(arr)) return arr; } catch {}
+  }
+  return trimmed.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const m = line.match(/^(.*?)\s*\|\s*(\d+)\s*$/);
+    if (m) return { text: m[1], timer_seconds: Number(m[2]) };
+    return { text: line };
+  });
+}
+
 function AdminInner() {
   const { closeModal, format, user } = useApp();
   const { loading, isAdmin } = useSession();
@@ -425,8 +490,8 @@ const emptyRecipeForm: RecipeFormState = {
   difficulty: "oson",
   servings: "4",
   is_published: true,
-  ingredients_text: "[]",
-  steps_text: "[]",
+  ingredients_text: "",
+  steps_text: "",
 };
 
 function RecipesAdmin() {
@@ -464,10 +529,8 @@ function RecipesAdmin() {
 
   const openEdit = async (item: RecipeListItem) => {
     try {
-      const response = await adminRequest("list_recipes");
-      const fullItems = response.data ?? [];
-      const full = fullItems.find((row: any) => row.id === item.id);
-
+      const response = await adminRequest("get_recipe", { id: item.id });
+      const full = response.data;
       if (!full) return;
 
       setForm({
@@ -480,8 +543,8 @@ function RecipesAdmin() {
         difficulty: full.difficulty ?? "oson",
         servings: String(full.servings ?? "4"),
         is_published: Boolean(full.is_published),
-        ingredients_text: JSON.stringify(full.ingredients ?? [], null, 2),
-        steps_text: JSON.stringify(full.steps ?? [], null, 2),
+        ingredients_text: ingredientsToLines(parseMaybeJson(full.ingredients)),
+        steps_text: stepsToLines(parseMaybeJson(full.steps)),
       });
 
       setView("form");
@@ -493,22 +556,8 @@ function RecipesAdmin() {
   const save = async () => {
     setError(null);
 
-    let ingredients: unknown[] = [];
-    let steps: unknown[] = [];
-
-    try {
-      ingredients = JSON.parse(form.ingredients_text || "[]");
-    } catch {
-      setError(format("Masalliqlar JSON formatida emas"));
-      return;
-    }
-
-    try {
-      steps = JSON.parse(form.steps_text || "[]");
-    } catch {
-      setError(format("Bosqichlar JSON formatida emas"));
-      return;
-    }
+    const ingredients = linesToIngredients(form.ingredients_text);
+    const steps = linesToSteps(form.steps_text);
 
     const payload: any = {
       title: form.title.trim(),
@@ -632,31 +681,41 @@ function RecipesAdmin() {
             <option value="qiyin">{format("Qiyin")}</option>
           </select>
 
-          <textarea
-            value={form.ingredients_text}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                ingredients_text: event.target.value,
-              }))
-            }
-            placeholder='[{"name":"Guruch","quantity":500,"unit":"g"}]'
-            rows={6}
-            className={`${inputClass} font-mono text-xs`}
-          />
+          <div>
+            <textarea
+              value={form.ingredients_text}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  ingredients_text: event.target.value,
+                }))
+              }
+              placeholder={format("Guruch | 1 | kg\nPiyoz | 2 | dona")}
+              rows={6}
+              className={`${inputClass} font-mono text-xs`}
+            />
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">
+              {format("Har qator: Nomi | miqdor | birlik. Misol: Guruch | 1 | kg")}
+            </p>
+          </div>
 
-          <textarea
-            value={form.steps_text}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                steps_text: event.target.value,
-              }))
-            }
-            placeholder='[{"text":"...","timer_seconds":600}]'
-            rows={6}
-            className={`${inputClass} font-mono text-xs`}
-          />
+          <div>
+            <textarea
+              value={form.steps_text}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  steps_text: event.target.value,
+                }))
+              }
+              placeholder={format("Zirvakni pishiring | 600\nGuruchni soling | 1200")}
+              rows={6}
+              className={`${inputClass} font-mono text-xs`}
+            />
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">
+              {format("Har qator: Bosqich matni | taymer soniya. Misol: Guruchni soling | 1200")}
+            </p>
+          </div>
 
           <label className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
             <input
@@ -1176,10 +1235,8 @@ function LifehacksAdmin() {
 
   const openEdit = async (item: LifehackListItem) => {
     try {
-      const response = await adminRequest("list_lifehacks");
-      const fullItems = response.data ?? [];
-      const full = fullItems.find((row: any) => row.id === item.id);
-
+      const response = await adminRequest("get_lifehack", { id: item.id });
+      const full = response.data;
       if (!full) return;
 
       setForm({
