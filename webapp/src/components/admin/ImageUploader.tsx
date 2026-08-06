@@ -1,4 +1,4 @@
-import { ImagePlus, Loader2 } from "lucide-react";
+import { CheckCircle2, ImagePlus, Loader2 } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { useApp } from "../../context/AppContext";
@@ -71,22 +71,40 @@ export default function ImageUploader({
       />
 
       {value ? (
-        <div className="overflow-hidden rounded-2xl border border-slate-100">
-          <img
-            src={value}
-            alt={format("Yuklangan rasm")}
-            className="h-36 w-full object-cover"
-          />
+        <div className="space-y-2">
+          <div className="overflow-hidden rounded-2xl border border-slate-100">
+            <img
+              src={value}
+              alt={format("Yuklangan rasm")}
+              className="h-36 w-full object-cover"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700">
+            <CheckCircle2 size={13} className="shrink-0 text-emerald-600" />
+            <span>☁️ Cloudflare R2 tezkor xotirasiga yuklandi</span>
+          </div>
         </div>
       ) : (
         <button
           onClick={() => inputRef.current?.click()}
           className="flex h-36 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-slate-500"
         >
-          {uploading ? <Loader2 size={20} className="animate-spin" /> : <ImagePlus size={20} />}
-          <span className="text-xs font-semibold">
-            {format("Rasm yuklash yoki Ctrl+V bilan qo‘yish")}
-          </span>
+          {uploading ? (
+            <>
+              <Loader2 size={24} className="animate-spin text-[#DB2777]" />
+              <span className="text-xs font-bold text-[#DB2777]">
+                {format("Siqilmoqda va R2'ga yuklanmoqda...")}
+              </span>
+            </>
+          ) : (
+            <>
+              <ImagePlus size={24} className="text-slate-400" />
+              <span className="text-xs font-semibold text-slate-600">
+                {format("Rasm yuklash yoki Ctrl+V bilan qo‘yish")}
+              </span>
+            </>
+          )}
         </button>
       )}
 
@@ -97,14 +115,16 @@ export default function ImageUploader({
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button
           onClick={() => inputRef.current?.click()}
-          className="h-10 rounded-2xl bg-slate-100 text-xs font-bold text-slate-700"
+          disabled={uploading}
+          className="h-10 rounded-2xl bg-slate-100 text-xs font-bold text-slate-700 disabled:opacity-50"
         >
           {format("Fayl tanlash")}
         </button>
 
         <button
           onClick={() => onChange("")}
-          className="h-10 rounded-2xl bg-red-50 text-xs font-bold text-red-500"
+          disabled={uploading}
+          className="h-10 rounded-2xl bg-red-50 text-xs font-bold text-red-500 disabled:opacity-50"
         >
           {format("Rasmni tozalash")}
         </button>
