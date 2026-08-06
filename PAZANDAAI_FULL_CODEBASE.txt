@@ -10068,11 +10068,24 @@ export default function BottomNav() {
 
   // ✅ Klaviatura ochilganda navbar yashirinadi
   useEffect(() => {
+    const onFocus = (e: FocusEvent) => {
+      const t = e.target as HTMLElement;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) setHidden(true);
+    };
+    const onBlur = () => setTimeout(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body || (a.tagName !== "INPUT" && a.tagName !== "TEXTAREA")) setHidden(false);
+    }, 100);
     const vv = window.visualViewport;
-    if (!vv) return;
-    const onResize = () => setHidden(window.innerHeight - vv.height > 180);
-    vv.addEventListener("resize", onResize);
-    return () => vv.removeEventListener("resize", onResize);
+    const onResize = () => { if (vv) setHidden(window.innerHeight - vv.height > 180); };
+    if (vv) vv.addEventListener("resize", onResize);
+    document.addEventListener("focusin", onFocus);
+    document.addEventListener("focusout", onBlur);
+    return () => {
+      if (vv) vv.removeEventListener("resize", onResize);
+      document.removeEventListener("focusin", onFocus);
+      document.removeEventListener("focusout", onBlur);
+    };
   }, []);
 
   return (
@@ -10331,17 +10344,36 @@ export default function PlaceholderPage({
 
 `typescript
 import { Plus, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useApp } from "../../context/AppContext";
 import { useSession } from "../../hooks/useSession";
 import { adminRequest } from "../../lib/api";
 import { registerBack } from "../../lib/back";
 import { DEFAULT_CATEGORIES, DEFAULT_PRODUCTS } from "../../lib/products";
+import { parseSingleIngredient } from "../../lib/recipe-utils";
+import { hapticNotification, hapticSelection } from "../../lib/telegram";
 import ImageUploader from "./ImageUploader";
 
 const inputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#DB2777]/40";
+
+// ✅ 60s kesh — tab almashtirganda QOTMAYDI
+const adminCache = new Map<string, { ts: number; data: any }>();
+function cached<T = any>(key: string): T | null {
+  const e = adminCache.get(key);
+  return e && Date.now() - e.ts < 60_000 ? (e.data as T) : null;
+}
+function remember(key: string, data: any) { adminCache.set(key, { ts: Date.now(), data }); }
+function forget(key: string) { adminCache.delete(key); }
+
+function AdminSkeleton({ h = "h-24" }: { h?: string }) {
+  return (
+    <div
+      className={`${h} animate-pulse rounded-3xl bg-slate-200/70`}
+    />
+  );
+}
 
 function parseMaybeJson(value: unknown): any[] {
   if (Array.isArray(value)) return value;
@@ -10352,16 +10384,24 @@ function parseMaybeJson(value: unknown): any[] {
 }
 
 function ingredientsToLines(list: any[]): string {
-  return list
-    .map((i) => {
-      const name = String(i?.name ?? "").trim();
-      const qty = typeof i?.quantity === "number" ? String(i.quantity) : "";
-      const unit = String(i?.unit ?? "").trim();
-      if (!name) return "";
-      return [name, qty, unit].filter(Boolean).join(" | ");
-    })
-    .filter(Boolean)
-    .join("\n");
+  const out: string[] = [];
+  for (const raw of list) {
+    const name = String(raw?.name ?? "");
+    const parts = name.split(/\\n|\n/).map((s: string) => s.trim()).filter(Boolean);
+    const pieces = parts.length ? parts : [name.trim()];
+    for (const line of pieces) {
+      if (/:\s*$/.test(line)) { out.push(line); continue; }
+      const p = parseSingleIngredient(line);
+      if (!p.name) continue;
+      const q = pieces.length === 1 && typeof raw?.quantity === "number" ? raw.quantity : p.quantity;
+      const u = pieces.length === 1 && raw?.unit ? raw.unit : p.unit;
+      const seg = [p.name];
+      if (q != null) seg.push(String(q));
+      if (u) seg.push(u);
+      out.push(seg.join(" | "));
+    }
+  }
+  return out.join("\n");
 }
 
 function linesToIngredients(text: string): any[] {
@@ -10387,9 +10427,9 @@ function linesToIngredients(text: string): any[] {
 function stepsToLines(list: any[]): string {
   return list
     .map((s) => {
-      const text = String(s?.text ?? "").trim();
+      const text = String(s?.text ?? "").replace(/\\n|\n/g, " ").trim();
       const timer = typeof s?.timer_seconds === "number" && s.timer_seconds ? ` | ${s.timer_seconds}` : "";
-      return text + timer;
+      return text ? text + timer : "";
     })
     .filter(Boolean)
     .join("\n");
@@ -10408,6 +10448,18 @@ function linesToSteps(text: string): any[] {
   });
 }
 
+const TABS = [
+  { id: "stats", label: "📊 Statistika" },
+  { id: "users", label: "👥 Foydalanuvchilar" },
+  { id: "payments", label: "💳 To'lovlar" },
+  { id: "broadcast", label: "📣 Broadcast" },
+  { id: "recipes", label: "🍳 Retseptlar" },
+  { id: "lifehacks", label: "💡 Lifehacklar" },
+  { id: "cats", label: "📁 Kategoriyalar" },
+  { id: "products", label: "🧺 Mahsulotlar" },
+  { id: "banner", label: "🖼 Banner" },
+];
+
 function AdminInner() {
   const { closeModal, format, user } = useApp();
   const { loading, isAdmin } = useSession();
@@ -10424,6 +10476,11 @@ function AdminInner() {
   const [tab, setTab] = useState<
     "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks" | "cats" | "products"
   >("stats");
+
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  useEffect(() => {
+    tabRefs.current[tab]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [tab]);
 
   return (
     <div className="fixed inset-0 z-[90] bg-slate-50">
@@ -10444,20 +10501,11 @@ function AdminInner() {
         </header>
 
         <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pt-3 pb-1">
-          {[
-            { id: "stats", label: "📊 Statistika" },
-            { id: "users", label: "👥 Foydalanuvchilar" },
-            { id: "payments", label: "💳 To'lovlar" },
-            { id: "broadcast", label: "📣 Broadcast" },
-            { id: "recipes", label: "🍳 Retseptlar" },
-            { id: "lifehacks", label: "💡 Lifehacklar" },
-            { id: "cats", label: "📁 Kategoriyalar" },
-            { id: "products", label: "🧺 Mahsulotlar" },
-            { id: "banner", label: "🖼 Banner" },
-          ].map((item) => (
+          {TABS.map((item) => (
             <button
               key={item.id}
-              onClick={() => setTab(item.id as any)}
+              ref={(el) => { tabRefs.current[item.id] = el; }}
+              onClick={() => { hapticSelection(); setTab(item.id as any); }}
               className={
                 tab === item.id
                   ? "shrink-0 rounded-2xl bg-[#DB2777] px-3 py-2 text-xs font-extrabold text-white shadow"
@@ -10472,8 +10520,8 @@ function AdminInner() {
         <main className="flex-1 overflow-y-auto px-4 pb-10 pt-4">
           {loading ? (
             <div className="space-y-3">
-              <div className="h-24 animate-pulse rounded-3xl bg-slate-200/70" />
-              <div className="h-24 animate-pulse rounded-3xl bg-slate-200/70" />
+              <AdminSkeleton h="h-24" />
+              <AdminSkeleton h="h-24" />
             </div>
           ) : !isUserAdmin ? (
             <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-500">
@@ -10507,43 +10555,39 @@ function StatsAdmin() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const c = cached<any>("stats");
+    if (c) { setStats(c); setLoading(false); }
     adminRequest("stats")
-      .then((res) => setStats(res.data))
+      .then((r) => { setStats(r.data); remember("stats", r.data); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return <div className="h-48 animate-pulse rounded-3xl bg-slate-200/70" />;
-  }
-
-  if (!stats) {
-    return (
-      <div className="rounded-3xl bg-red-50 p-4 text-sm text-red-600">
-        {format("Statistika yuklanmadi")}
-      </div>
-    );
-  }
-
-  const items = [
-    { label: "👥 Jami foydalanuvchilar", value: stats.total_users },
-    { label: "💎 Premium", value: stats.premium_users },
-    { label: "⛔ Banlangan", value: stats.banned_users },
-    { label: "💳 Kutilayotgan to'lovlar", value: stats.pending_payments },
-    { label: "🍳 Retseptlar", value: stats.total_recipes },
-    { label: "💡 Lifehacklar", value: stats.total_lifehacks },
-  ];
+  if (loading && !stats) return <AdminSkeleton h="h-40" />;
 
   return (
-    <div className="grid grid-cols-2 gap-3">
-      {items.map((item, i) => (
-        <div key={i} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold text-slate-500">{item.label}</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">
-            {item.value}
-          </p>
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold text-slate-400">{format("Foydalanuvchilar")}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.usersCount ?? 0}</p>
         </div>
-      ))}
+
+        <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold text-slate-400">{format("Premium a'zolar")}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-pink-600">{stats?.premiumUsersCount ?? 0}</p>
+        </div>
+
+        <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold text-slate-400">{format("Retseptlar")}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.recipesCount ?? 0}</p>
+        </div>
+
+        <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold text-slate-400">{format("Lifehacklar")}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.lifehacksCount ?? 0}</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -10554,14 +10598,17 @@ function StatsAdmin() {
 function UsersAdmin() {
   const { format } = useApp();
   const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async (q?: string) => {
-    setLoading(true);
+    const key = `users:${q ?? "all"}`;
+    const c = cached<any[]>(key);
+    if (c) { setUsers(c); setLoading(false); }
     try {
       const res = await adminRequest("list_users", q ? { search: q } : {});
       setUsers(res.data ?? []);
+      remember(key, res.data ?? []);
     } catch {}
     setLoading(false);
   }, []);
@@ -10570,21 +10617,25 @@ function UsersAdmin() {
 
   const toggleBan = async (telegramId: number) => {
     await adminRequest("toggle_ban", { telegram_id: telegramId });
+    forget("users:all");
     load(search || undefined);
   };
 
   const grantPremium = async (telegramId: number) => {
     await adminRequest("grant_premium", { telegram_id: telegramId, days: 30 });
+    forget("users:all");
     load(search || undefined);
   };
 
   const revokePremium = async (telegramId: number) => {
     await adminRequest("revoke_premium", { telegram_id: telegramId });
+    forget("users:all");
     load(search || undefined);
   };
 
   const extendPremium = async (telegramId: number) => {
     await adminRequest("extend_premium", { telegram_id: telegramId, days: 30 });
+    forget("users:all");
     load(search || undefined);
   };
 
@@ -10606,8 +10657,8 @@ function UsersAdmin() {
         </button>
       </div>
 
-      {loading ? (
-        <div className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />
+      {loading && users.length === 0 ? (
+        <AdminSkeleton h="h-32" />
       ) : users.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
           {format("Foydalanuvchilar topilmadi")}
@@ -10699,6 +10750,7 @@ function CardSettings() {
 
   const save = async () => {
     await adminRequest("save_payment_card", { card_number: cardNumber, card_holder: cardHolder });
+    hapticNotification("success");
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -10725,10 +10777,13 @@ function PaymentsAdmin() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async (st: string) => {
-    setLoading(true);
+    const key = `pay:${st}`;
+    const c = cached<any[]>(key);
+    if (c) { setPayments(c); setLoading(false); }
     try {
       const res = await adminRequest("list_payments", { status: st });
       setPayments(res.data ?? []);
+      remember(key, res.data ?? []);
     } catch {}
     setLoading(false);
   }, []);
@@ -10737,11 +10792,13 @@ function PaymentsAdmin() {
 
   const approve = async (requestId: string) => {
     await adminRequest("approve_payment", { request_id: requestId });
+    forget(`pay:${status}`);
     load(status);
   };
 
   const reject = async (requestId: string) => {
     await adminRequest("reject_payment", { request_id: requestId });
+    forget(`pay:${status}`);
     load(status);
   };
 
@@ -10750,14 +10807,14 @@ function PaymentsAdmin() {
       <CardSettings />
       <div className="flex gap-2">
         {(["pending", "approved", "rejected"] as const).map((st) => (
-          <button key={st} onClick={() => setStatus(st)}
+          <button key={st} onClick={() => { hapticSelection(); setStatus(st); }}
             className={`flex-1 rounded-2xl px-2 py-2 text-[11px] font-extrabold ${status === st ? "bg-[#DB2777] text-white" : "bg-white text-slate-500 shadow-sm"}`}>
             {st === "pending" ? format("⏳ Kutilmoqda") : st === "approved" ? format("✅ Tasdiqlangan") : format("❌ Rad etilgan")}
           </button>
         ))}
       </div>
-      {loading ? (
-        <div className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />
+      {loading && payments.length === 0 ? (
+        <AdminSkeleton h="h-32" />
       ) : payments.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
           {format("So'rovlar yo'q")}
@@ -10794,6 +10851,7 @@ function PaymentsAdmin() {
 // =====================
 function BroadcastAdmin() {
   const { format } = useApp();
+
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -10801,14 +10859,15 @@ function BroadcastAdmin() {
   const send = async () => {
     if (!text.trim() || sending) return;
 
-    if (!window.confirm(format("Barcha foydalanuvchilarga yuborilsinmi?"))) return;
+    if (!window.confirm(format("Barcha foydalanuvchilarga xabar yuborilsinmi?"))) return;
 
     setSending(true);
     setResult(null);
 
     try {
       const res = await adminRequest("broadcast", { text: text.trim() });
-      setResult(format(`Yuborildi: ${res.sent}, Xato: ${res.failed}`));
+      setResult(format(`Yuborildi: ${res.sent ?? 0}, Xato: ${res.failed ?? 0}`));
+      hapticNotification("success");
       setText("");
     } catch (err: any) {
       setResult(err?.message ?? format("Xatolik"));
@@ -10818,17 +10877,20 @@ function BroadcastAdmin() {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+      <p className="text-sm font-bold text-slate-900">
+        {format("Barcha foydalanuvchilarga xabar yuborish")}
+      </p>
+
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={format("Broadcast matnini yozing...")}
-        rows={5}
-        className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-sm outline-none"
+        placeholder={format("Xabar matni...")}
+        className="h-32 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-[#DB2777]/40"
       />
 
       {result ? (
-        <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-600">
+        <div className="rounded-2xl bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-700">
           {result}
         </div>
       ) : null}
@@ -10895,12 +10957,14 @@ function RecipesAdmin() {
   const [form, setForm] = useState<RecipeFormState>(emptyRecipeForm);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    const key = "recipes:list";
+    const c = cached<any[]>(key);
+    if (c) { setItems(c); setLoading(false); }
 
     try {
       const response = await adminRequest("list_recipes");
       setItems(response.data ?? []);
+      remember(key, response.data ?? []);
     } catch (err: any) {
       setError(err?.message ?? format("Xatolik"));
     } finally {
@@ -10918,6 +10982,7 @@ function RecipesAdmin() {
   };
 
   const openEdit = async (item: RecipeListItem) => {
+    setError(null);
     try {
       const response = await adminRequest("get_recipe", { id: item.id });
       const full = response.data;
@@ -10972,6 +11037,8 @@ function RecipesAdmin() {
 
     try {
       await adminRequest("upsert_recipe", payload);
+      forget("recipes:list");
+      hapticNotification("success");
       await load();
       setView("list");
     } catch (err: any) {
@@ -10984,6 +11051,8 @@ function RecipesAdmin() {
 
     try {
       await adminRequest("delete_recipe", { id });
+      forget("recipes:list");
+      hapticNotification("success");
       await load();
     } catch (err: any) {
       setError(err?.message ?? format("O‘chirishda xatolik"));
@@ -10995,142 +11064,136 @@ function RecipesAdmin() {
       <div className="space-y-3">
         <button
           onClick={() => setView("list")}
-          className="rounded-2xl bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-600"
+          className="h-10 rounded-2xl bg-slate-100 px-4 text-xs font-bold text-slate-700"
         >
-          {format("← Ro‘yxatga qaytish")}
+          ← {format("Orqaga ro'yxatga")}
         </button>
 
+        {error ? (
+          <div className="rounded-2xl bg-red-50 p-3 text-xs font-semibold text-red-600">
+            {error}
+          </div>
+        ) : null}
+
         <div className="space-y-3 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
-          <input
-            value={form.title}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, title: event.target.value }))
-            }
-            placeholder={format("Retsept nomi")}
-            className={inputClass}
-          />
-
-          <input
-            value={form.category}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, category: event.target.value }))
-            }
-            placeholder={format("Kategoriya")}
-            className={inputClass}
-          />
-
-          <textarea
-            value={form.description}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, description: event.target.value }))
-            }
-            placeholder={format("Qisqacha tavsif")}
-            rows={3}
-            className={inputClass}
-          />
-
-          <ImageUploader
-            value={form.image_url}
-            onChange={(url) =>
-              setForm((prev) => ({ ...prev, image_url: url }))
-            }
-          />
-
-          <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-bold text-slate-500">{format("Sarlavha")}</label>
             <input
-              value={form.cook_time_minutes}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  cook_time_minutes: event.target.value,
-                }))
-              }
-              placeholder={format("Vaqt (daqiqa)")}
-              inputMode="numeric"
-              className={inputClass}
-            />
-
-            <input
-              value={form.servings}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, servings: event.target.value }))
-              }
-              placeholder={format("Porsiya")}
-              inputMode="numeric"
+              value={form.title}
+              onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+              placeholder={format("Retsept nomi")}
               className={inputClass}
             />
           </div>
 
-          <select
-            value={form.difficulty}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, difficulty: event.target.value }))
-            }
-            className={inputClass}
-          >
-            <option value="oson">{format("Oson")}</option>
-            <option value="o'rta">{format("O‘rta")}</option>
-            <option value="qiyin">{format("Qiyin")}</option>
-          </select>
+          <div>
+            <label className="text-xs font-bold text-slate-500">{format("Kategoriya")}</label>
+            <input
+              value={form.category}
+              onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
+              placeholder={format("Masalan: Asosiy taom")}
+              className={inputClass}
+            />
+          </div>
 
           <div>
+            <label className="text-xs font-bold text-slate-500">{format("Emoji (rasm bo'lmaganda ko'rinadi)")}</label>
+            <input
+              value={form.emoji}
+              onChange={(e) => setForm((p) => ({ ...p, emoji: e.target.value }))}
+              placeholder="🍲"
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-500">{format("Tavsif")}</label>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+              placeholder={format("Qisqacha tavsif")}
+              className="h-20 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-500">{format("Rasm URL")}</label>
+            <ImageUploader
+              value={form.image_url}
+              onChange={(url) => setForm((p) => ({ ...p, image_url: url }))}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="text-[11px] font-bold text-slate-500">{format("Vaqt (daq)")}</label>
+              <input
+                type="number"
+                value={form.cook_time_minutes}
+                onChange={(e) => setForm((p) => ({ ...p, cook_time_minutes: e.target.value }))}
+                placeholder="30"
+                className={inputClass}
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500">{format("Murakkablik")}</label>
+              <select
+                value={form.difficulty}
+                onChange={(e) => setForm((p) => ({ ...p, difficulty: e.target.value }))}
+                className={inputClass}
+              >
+                <option value="oson">{format("Oson")}</option>
+                <option value="o'rta">{format("O'rta")}</option>
+                <option value="qiyin">{format("Qiyin")}</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500">{format("Porsiya")}</label>
+              <input
+                type="number"
+                value={form.servings}
+                onChange={(e) => setForm((p) => ({ ...p, servings: e.target.value }))}
+                placeholder="4"
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-500">
+              {format("Masalliqlar (Har bir qatorda: Nomi | Miqdori | Birligi)")}
+            </label>
             <textarea
               value={form.ingredients_text}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  ingredients_text: event.target.value,
-                }))
-              }
-              placeholder={format("Guruch | 1 | kg\nPiyoz | 2 | dona")}
-              rows={6}
-              className={`${inputClass} font-mono text-xs`}
+              onChange={(e) => setForm((p) => ({ ...p, ingredients_text: e.target.value }))}
+              placeholder={"Guruch | 1 | kg\nSabzi | 800 | g\nTuxum | 2 | dona"}
+              className="h-32 w-full rounded-2xl border border-slate-200 bg-white p-3 font-mono text-xs outline-none"
             />
-            <p className="mt-1 text-[10px] leading-4 text-slate-400">
-              {format("Har qator: Nomi | miqdor | birlik. Misol: Guruch | 1 | kg")}
-            </p>
           </div>
 
           <div>
+            <label className="text-xs font-bold text-slate-500">
+              {format("Bosqichlar (Har bir qatorda: Matn | Taymer soniyasi)")}
+            </label>
             <textarea
               value={form.steps_text}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  steps_text: event.target.value,
-                }))
-              }
-              placeholder={format("Zirvakni pishiring | 600\nGuruchni soling | 1200")}
-              rows={6}
-              className={`${inputClass} font-mono text-xs`}
+              onChange={(e) => setForm((p) => ({ ...p, steps_text: e.target.value }))}
+              placeholder={"Guruchni ivitib qo'ying | 1800\nYog'ni qizdirib unni qovuring"}
+              className="h-32 w-full rounded-2xl border border-slate-200 bg-white p-3 font-mono text-xs outline-none"
             />
-            <p className="mt-1 text-[10px] leading-4 text-slate-400">
-              {format("Har qator: Bosqich matni | taymer soniya. Misol: Guruchni soling | 1200")}
-            </p>
           </div>
 
-          <label className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
+          <label className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={form.is_published}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  is_published: event.target.checked,
-                }))
-              }
+              onChange={(e) => setForm((p) => ({ ...p, is_published: e.target.checked }))}
+              className="h-4 w-4 rounded border-slate-300 text-[#DB2777]"
             />
-
-            <span className="text-sm font-semibold text-slate-700">
-              {format("Nashr qilingan")}
-            </span>
+            <span className="text-xs font-bold text-slate-700">{format("Chop etilgan (foydalanuvchilarga ko'rinadi)")}</span>
           </label>
-
-          {error ? (
-            <div className="rounded-2xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
-              {error}
-            </div>
-          ) : null}
 
           <button
             onClick={save}
@@ -11153,8 +11216,8 @@ function RecipesAdmin() {
         {format("Yangi retsept")}
       </button>
 
-      {loading ? (
-        <div className="h-24 animate-pulse rounded-3xl bg-slate-200/70" />
+      {loading && items.length === 0 ? (
+        <AdminSkeleton h="h-24" />
       ) : error ? (
         <div className="rounded-3xl bg-red-50 p-4 text-sm font-semibold text-red-600">
           {error}
@@ -11198,382 +11261,8 @@ function RecipesAdmin() {
 }
 
 // =========================
-// BANNER ADMIN
-// =========================
-
-export interface BannerSlideState {
-  id: string;
-  image_url: string;
-  title: string;
-  subtitle: string;
-  button_text: string;
-  button_url: string;
-  active: boolean;
-}
-
-function BannerAdmin() {
-  const { format } = useApp();
-
-  const [slides, setSlides] = useState<BannerSlideState[]>([]);
-  const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
-
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await adminRequest("get_banner");
-
-        const row = Array.isArray(response?.data)
-          ? response.data[0]
-          : response?.data;
-
-        const value = row?.value ?? null;
-
-        if (value) {
-          let parsedSlides: BannerSlideState[] = [];
-
-          if (Array.isArray(value)) {
-            parsedSlides = value.map((item, idx) => ({
-              id: item.id || `slide-${idx}-${Date.now()}`,
-              image_url: item.image_url || "",
-              title: item.title || "",
-              subtitle: item.subtitle || "",
-              button_text: item.button_text || "",
-              button_url: item.button_url || "",
-              active: item.active !== false,
-            }));
-          } else if (typeof value === "object") {
-            if (Array.isArray(value.slides)) {
-              parsedSlides = value.slides.map((item: any, idx: number) => ({
-                id: item.id || `slide-${idx}-${Date.now()}`,
-                image_url: item.image_url || "",
-                title: item.title || "",
-                subtitle: item.subtitle || "",
-                button_text: item.button_text || "",
-                button_url: item.button_url || "",
-                active: item.active !== false,
-              }));
-            } else if (value.image_url || value.title) {
-              parsedSlides = [
-                {
-                  id: value.id || "slide-0",
-                  image_url: value.image_url || "",
-                  title: value.title || "",
-                  subtitle: value.subtitle || "",
-                  button_text: value.button_text || "",
-                  button_url: value.button_url || "",
-                  active: value.active !== false,
-                },
-              ];
-            }
-          }
-
-          setSlides(parsedSlides);
-          if (parsedSlides.length > 0) {
-            setActiveSlideId(parsedSlides[0].id);
-          }
-        }
-      } catch (err: any) {
-        setError(err?.message ?? format("Bannerni yuklashda xatolik"));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
-  }, [format]);
-
-  const addSlide = () => {
-    const newSlide: BannerSlideState = {
-      id: `slide-${Date.now()}`,
-      image_url: "",
-      title: "Yangi Banner",
-      subtitle: "Banner matni va tavsifi",
-      button_text: "",
-      button_url: "",
-      active: true,
-    };
-
-    setSlides((prev) => [...prev, newSlide]);
-    setActiveSlideId(newSlide.id);
-  };
-
-  const updateSlide = (id: string, patch: Partial<BannerSlideState>) => {
-    setSlides((prev) =>
-      prev.map((slide) => (slide.id === id ? { ...slide, ...patch } : slide)),
-    );
-  };
-
-  const deleteSlide = (id: string) => {
-    if (slides.length <= 1) {
-      if (!window.confirm(format("Oxirgi bannerni o'chirmoqchimisiz?"))) return;
-    }
-
-    setSlides((prev) => {
-      const next = prev.filter((s) => s.id !== id);
-      if (activeSlideId === id && next.length > 0) {
-        setActiveSlideId(next[0].id);
-      }
-      return next;
-    });
-  };
-
-  const moveSlide = (index: number, direction: "up" | "down") => {
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= slides.length) return;
-
-    setSlides((prev) => {
-      const copy = [...prev];
-      const temp = copy[index];
-      copy[index] = copy[targetIndex];
-      copy[targetIndex] = temp;
-      return copy;
-    });
-  };
-
-  const save = async () => {
-    setSaving(true);
-    setMessage(null);
-    setError(null);
-
-    try {
-      await adminRequest("save_banner", { value: slides });
-      setMessage(format("✅ Karusel bannerlari muvaffaqiyatli saqlandi!"));
-    } catch (err: any) {
-      setError(err?.message ?? format("Saqlashda xatolik"));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return <div className="h-48 animate-pulse rounded-3xl bg-slate-200/70" />;
-  }
-
-  const selectedSlide = slides.find((s) => s.id === activeSlideId) || slides[0];
-
-  return (
-    <div className="space-y-4">
-      {/* Header action bar */}
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="font-display text-base font-extrabold text-slate-900">
-          {format(`Bannerlar (${slides.length} ta)`)}
-        </h3>
-
-        <button
-          onClick={addSlide}
-          className="flex items-center gap-1.5 rounded-2xl bg-[#DB2777] px-3 py-2 text-xs font-extrabold text-white shadow active:scale-95"
-        >
-          <Plus size={15} />
-          <span>{format("Banner qo'shish")}</span>
-        </button>
-      </div>
-
-      {/* Tabs / Slide Selector Pill Bar */}
-      {slides.length > 0 ? (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-          {slides.map((slide, idx) => {
-            const isSelected = slide.id === selectedSlide?.id;
-            return (
-              <button
-                key={slide.id}
-                onClick={() => setActiveSlideId(slide.id)}
-                className={`flex shrink-0 items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-bold transition-all ${
-                  isSelected
-                    ? "border-[#DB2777] bg-[#DB2777] text-white shadow-md"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <span>{format(`Banner #${idx + 1}`)}</span>
-                {!slide.active ? (
-                  <span className="rounded bg-slate-200 px-1 text-[10px] text-slate-600">
-                    {format("Nofaol")}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {/* Active Slide Form */}
-      {selectedSlide ? (
-        <div className="space-y-3.5 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
-            <span className="text-xs font-extrabold text-slate-500">
-              {format(`Slide Tahriri`)}
-            </span>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() =>
-                  moveSlide(
-                    slides.findIndex((s) => s.id === selectedSlide.id),
-                    "up",
-                  )
-                }
-                title={format("Yuqoriga surish")}
-                className="rounded-xl bg-slate-100 p-2 text-xs font-bold text-slate-700 hover:bg-slate-200"
-              >
-                ↑
-              </button>
-
-              <button
-                onClick={() =>
-                  moveSlide(
-                    slides.findIndex((s) => s.id === selectedSlide.id),
-                    "down",
-                  )
-                }
-                title={format("Pastga surish")}
-                className="rounded-xl bg-slate-100 p-2 text-xs font-bold text-slate-700 hover:bg-slate-200"
-              >
-                ↓
-              </button>
-
-              <button
-                onClick={() => deleteSlide(selectedSlide.id)}
-                title={format("Bannerni o'chirish")}
-                className="flex items-center gap-1 rounded-xl bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-500 hover:bg-red-100"
-              >
-                <Trash2 size={14} />
-                <span>{format("O'chirish")}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* R2 Image Uploader */}
-          <div>
-            <label className="mb-1 block text-xs font-bold text-slate-700">
-              {format("Rasm (Cloudflare R2)")}
-            </label>
-            <ImageUploader
-              value={selectedSlide.image_url}
-              onChange={(url) => updateSlide(selectedSlide.id, { image_url: url })}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-bold text-slate-700">
-              {format("Sarlavha (Title)")}
-            </label>
-            <input
-              value={selectedSlide.title}
-              onChange={(event) =>
-                updateSlide(selectedSlide.id, { title: event.target.value })
-              }
-              placeholder={format("Masalan: Kun retsepti yoki Pazanda AI")}
-              className={inputClass}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-bold text-slate-700">
-              {format("Tavsif (Subtitle)")}
-            </label>
-            <input
-              value={selectedSlide.subtitle}
-              onChange={(event) =>
-                updateSlide(selectedSlide.id, { subtitle: event.target.value })
-              }
-              placeholder={format("Masalan: Oshxona sirlari va maslahatlari")}
-              className={inputClass}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="mb-1 block text-xs font-bold text-slate-700">
-                {format("Tugma matni (Ixtiyoriy)")}
-              </label>
-              <input
-                value={selectedSlide.button_text}
-                onChange={(event) =>
-                  updateSlide(selectedSlide.id, { button_text: event.target.value })
-                }
-                placeholder={format("Masalan: Batafsil")}
-                className={inputClass}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-bold text-slate-700">
-                {format("Tugma havolasi (URL)")}
-              </label>
-              <input
-                value={selectedSlide.button_url}
-                onChange={(event) =>
-                  updateSlide(selectedSlide.id, { button_url: event.target.value })
-                }
-                placeholder={format("https://t.me/...")}
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <label className="flex items-center gap-2.5 rounded-2xl bg-slate-50 px-3 py-3">
-            <input
-              type="checkbox"
-              checked={selectedSlide.active}
-              onChange={(event) =>
-                updateSlide(selectedSlide.id, { active: event.target.checked })
-              }
-              className="h-4 w-4 rounded border-slate-300 text-[#DB2777] focus:ring-[#DB2777]"
-            />
-
-            <span className="text-sm font-semibold text-slate-700">
-              {format("Ushbu banner faol (Bosh sahifada ko'rinadi)")}
-            </span>
-          </label>
-        </div>
-      ) : (
-        <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          {format("Hozircha bannerlar yo'q. 'Banner qo'shish' tugmasini bosing.")}
-        </div>
-      )}
-
-      {message ? (
-        <div className="rounded-2xl bg-emerald-50 px-3.5 py-2.5 text-xs font-bold text-emerald-600">
-          {message}
-        </div>
-      ) : null}
-
-      {error ? (
-        <div className="rounded-2xl bg-red-50 px-3.5 py-2.5 text-xs font-bold text-red-600">
-          {error}
-        </div>
-      ) : null}
-
-      <button
-        onClick={save}
-        disabled={saving}
-        className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white shadow-lg active:scale-98 disabled:opacity-40"
-      >
-        {saving
-          ? format("Saqlanmoqda...")
-          : format("Barcha karusel bannerlarini saqlash")}
-      </button>
-    </div>
-  );
-}
-
-// =========================
 // LIFEHACKS ADMIN
 // =========================
-
-interface LifehackListItem {
-  id: number;
-  title: string;
-  category?: string;
-  is_published: boolean;
-}
 
 interface LifehackFormState {
   id?: number;
@@ -11595,7 +11284,7 @@ const emptyLifehackForm: LifehackFormState = {
 function LifehacksAdmin() {
   const { format } = useApp();
 
-  const [items, setItems] = useState<LifehackListItem[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -11603,12 +11292,14 @@ function LifehacksAdmin() {
   const [form, setForm] = useState<LifehackFormState>(emptyLifehackForm);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    const key = "lifehacks:list";
+    const c = cached<any[]>(key);
+    if (c) { setItems(c); setLoading(false); }
 
     try {
       const response = await adminRequest("list_lifehacks");
       setItems(response.data ?? []);
+      remember(key, response.data ?? []);
     } catch (err: any) {
       setError(err?.message ?? format("Xatolik"));
     } finally {
@@ -11625,7 +11316,8 @@ function LifehacksAdmin() {
     setView("form");
   };
 
-  const openEdit = async (item: LifehackListItem) => {
+  const openEdit = async (item: any) => {
+    setError(null);
     try {
       const response = await adminRequest("get_lifehack", { id: item.id });
       const full = response.data;
@@ -11652,7 +11344,7 @@ function LifehacksAdmin() {
     const payload: any = {
       title: form.title.trim(),
       category: form.category.trim() || null,
-      content: form.content.trim(),
+      content: form.content.trim() || null,
       image_url: form.image_url.trim() || null,
       is_published: form.is_published,
     };
@@ -11663,6 +11355,8 @@ function LifehacksAdmin() {
 
     try {
       await adminRequest("upsert_lifehack", payload);
+      forget("lifehacks:list");
+      hapticNotification("success");
       await load();
       setView("list");
     } catch (err: any) {
@@ -11675,6 +11369,8 @@ function LifehacksAdmin() {
 
     try {
       await adminRequest("delete_lifehack", { id });
+      forget("lifehacks:list");
+      hapticNotification("success");
       await load();
     } catch (err: any) {
       setError(err?.message ?? format("O‘chirishda xatolik"));
@@ -11686,69 +11382,65 @@ function LifehacksAdmin() {
       <div className="space-y-3">
         <button
           onClick={() => setView("list")}
-          className="rounded-2xl bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-600"
+          className="h-10 rounded-2xl bg-slate-100 px-4 text-xs font-bold text-slate-700"
         >
-          {format("← Ro‘yxatga qaytish")}
+          ← {format("Orqaga ro'yxatga")}
         </button>
 
+        {error ? (
+          <div className="rounded-2xl bg-red-50 p-3 text-xs font-semibold text-red-600">
+            {error}
+          </div>
+        ) : null}
+
         <div className="space-y-3 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
-          <input
-            value={form.title}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, title: event.target.value }))
-            }
-            placeholder={format("Lifehack sarlavhasi")}
-            className={inputClass}
-          />
+          <div>
+            <label className="text-xs font-bold text-slate-500">{format("Sarlavha")}</label>
+            <input
+              value={form.title}
+              onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+              placeholder={format("Lifehack nomi")}
+              className={inputClass}
+            />
+          </div>
 
-          <input
-            value={form.category}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, category: event.target.value }))
-            }
-            placeholder={format("Kategoriya")}
-            className={inputClass}
-          />
+          <div>
+            <label className="text-xs font-bold text-slate-500">{format("Kategoriya")}</label>
+            <input
+              value={form.category}
+              onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
+              placeholder={format("Masalan: Oshxona")}
+              className={inputClass}
+            />
+          </div>
 
-          <textarea
-            value={form.content}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, content: event.target.value }))
-            }
-            placeholder={format("Batafsil matn")}
-            rows={5}
-            className={inputClass}
-          />
+          <div>
+            <label className="text-xs font-bold text-slate-500">{format("Matn / Maslahat")}</label>
+            <textarea
+              value={form.content}
+              onChange={(e) => setForm((p) => ({ ...p, content: e.target.value }))}
+              placeholder={format("Foydali maslahat matni")}
+              className="h-32 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm outline-none"
+            />
+          </div>
 
-          <ImageUploader
-            value={form.image_url}
-            onChange={(url) =>
-              setForm((prev) => ({ ...prev, image_url: url }))
-            }
-          />
+          <div>
+            <label className="text-xs font-bold text-slate-500">{format("Rasm URL")}</label>
+            <ImageUploader
+              value={form.image_url}
+              onChange={(url) => setForm((p) => ({ ...p, image_url: url }))}
+            />
+          </div>
 
-          <label className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
+          <label className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={form.is_published}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  is_published: event.target.checked,
-                }))
-              }
+              onChange={(e) => setForm((p) => ({ ...p, is_published: e.target.checked }))}
+              className="h-4 w-4 rounded border-slate-300 text-[#DB2777]"
             />
-
-            <span className="text-sm font-semibold text-slate-700">
-              {format("Nashr qilingan")}
-            </span>
+            <span className="text-xs font-bold text-slate-700">{format("Chop etilgan")}</span>
           </label>
-
-          {error ? (
-            <div className="rounded-2xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
-              {error}
-            </div>
-          ) : null}
 
           <button
             onClick={save}
@@ -11771,8 +11463,8 @@ function LifehacksAdmin() {
         {format("Yangi lifehack")}
       </button>
 
-      {loading ? (
-        <div className="h-24 animate-pulse rounded-3xl bg-slate-200/70" />
+      {loading && items.length === 0 ? (
+        <AdminSkeleton h="h-24" />
       ) : error ? (
         <div className="rounded-3xl bg-red-50 p-4 text-sm font-semibold text-red-600">
           {error}
@@ -11832,11 +11524,13 @@ function CategoriesAdmin() {
 
   const saveImages = async () => {
     await adminRequest("save_category_images", { value: images });
+    hapticNotification("success");
   };
   const rename = async (oldName: string) => {
     const newName = (names[oldName] ?? "").trim();
     if (!newName || newName === oldName) return;
     await adminRequest("rename_category", { old_name: oldName, new_name: newName });
+    hapticNotification("success");
     await load();
   };
 
@@ -11866,6 +11560,9 @@ function CategoriesAdmin() {
   );
 }
 
+// =========================
+// PRODUCT CATALOG ADMIN
+// =========================
 function ProductCatalogAdmin() {
   const { format } = useApp();
   const [categories, setCategories] = useState<any[]>(DEFAULT_CATEGORIES as any);
@@ -11874,11 +11571,17 @@ function ProductCatalogAdmin() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    const c = cached<any>("catalog");
+    if (c) { setCategories(c.categories); setProducts(c.products); }
     adminRequest("get_product_catalog")
       .then((r) => {
         const v = r.data?.value;
         if (v?.categories?.length) setCategories(v.categories);
         if (v?.products?.length) setProducts(v.products);
+        remember("catalog", {
+          categories: v?.categories?.length ? v.categories : DEFAULT_CATEGORIES,
+          products: v?.products?.length ? v.products : DEFAULT_PRODUCTS,
+        });
       })
       .catch(() => {});
   }, []);
@@ -11886,20 +11589,32 @@ function ProductCatalogAdmin() {
   const patchProduct = (key: string, patch: any) =>
     setProducts((prev) => prev.map((p) => (p.key === key ? { ...p, ...patch } : p)));
   const removeProduct = (key: string) => setProducts((prev) => prev.filter((p) => p.key !== key));
-  const addProduct = () =>
+  const addProduct = () => {
+    hapticSelection();
     setProducts((prev) => [
       ...prev,
-      { key: `p${Date.now()}`, label: "Yangi mahsulot", emoji: "", category: activeCat === "all" ? "pantry" : activeCat },
+      { key: `p${Date.now()}`, label: "Yangi mahsulot", emoji: "🆕", category: activeCat === "all" ? "pantry" : activeCat },
     ]);
+  };
   const patchCategory = (id: string, patch: any) =>
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  const addCategory = () =>
-    setCategories((prev) => [...prev, { id: `c${Date.now()}`, label: "Yangi kategoriya", emoji: "🧺" }]);
+  const addCategory = () => setCategories((prev) => [...prev, { id: `c${Date.now()}`, label: "Yangi kategoriya", emoji: "🧺" }]);
 
   const save = async () => {
     await adminRequest("save_product_catalog", { value: { categories, products } });
+    remember("catalog", { categories, products });
+    hapticNotification("success");
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+  };
+
+  const resetDefaults = async () => {
+    if (!window.confirm(format("Standart katalogga qaytilsinmi?"))) return;
+    setCategories(DEFAULT_CATEGORIES as any);
+    setProducts(DEFAULT_PRODUCTS as any);
+    await adminRequest("save_product_catalog", { value: { categories: DEFAULT_CATEGORIES, products: DEFAULT_PRODUCTS } });
+    remember("catalog", { categories: DEFAULT_CATEGORIES, products: DEFAULT_PRODUCTS });
+    hapticNotification("success");
   };
 
   const visible = activeCat === "all" ? products : products.filter((p) => p.category === activeCat);
@@ -11907,22 +11622,22 @@ function ProductCatalogAdmin() {
   return (
     <div className="space-y-3">
       <div className="no-scrollbar flex gap-2 overflow-x-auto">
-        <button onClick={() => setActiveCat("all")} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${activeCat === "all" ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm"}`}>
+        <button onClick={() => { hapticSelection(); setActiveCat("all"); }} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${activeCat === "all" ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm"}`}>
           {format("Barchasi")}
         </button>
         {categories.map((c) => (
-          <button key={c.id} onClick={() => setActiveCat(c.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${activeCat === c.id ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm"}`}>
+          <button key={c.id} onClick={() => { hapticSelection(); setActiveCat(c.id); }} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${activeCat === c.id ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm"}`}>
             {c.emoji} {format(c.label)}
           </button>
         ))}
       </div>
 
       <div className="space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
-        <p className="text-xs font-extrabold text-slate-500">{format("Kategoriyalar (nom/emoji tahrirlash)")}</p>
+        <p className="text-xs font-extrabold text-slate-500">{format("Kategoriyalar (nom/emoji)")}</p>
         {categories.map((c) => (
-          <div key={c.id} className="flex gap-2">
-            <input value={c.emoji} onChange={(e) => patchCategory(c.id, { emoji: e.target.value })} className={`${inputClass} w-14 text-center`} />
-            <input value={c.label} onChange={(e) => patchCategory(c.id, { label: e.target.value })} className={inputClass} />
+          <div key={c.id} className="flex items-center gap-2">
+            <input value={c.emoji} onChange={(e) => patchCategory(c.id, { emoji: e.target.value })} className="h-10 w-14 shrink-0 rounded-xl border border-slate-200 text-center text-base outline-none" />
+            <input value={c.label} onChange={(e) => patchCategory(c.id, { label: e.target.value })} className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 px-3 text-sm outline-none" />
           </div>
         ))}
         <button onClick={addCategory} className="h-10 w-full rounded-2xl bg-slate-100 text-xs font-bold text-slate-600">
@@ -11930,19 +11645,22 @@ function ProductCatalogAdmin() {
         </button>
       </div>
 
+      {/* ✅ 2 qatorli qator — toshish yo'q, o'chirish ko'rinadi */}
       <div className="space-y-2">
         {visible.map((p) => (
-          <div key={p.key} className="flex items-center gap-2 rounded-3xl border border-slate-100 bg-white p-2.5 shadow-sm">
-            <input value={p.emoji} onChange={(e) => patchProduct(p.key, { emoji: e.target.value })} className={`${inputClass} w-12 text-center`} />
-            <input value={p.label} onChange={(e) => patchProduct(p.key, { label: e.target.value })} className={inputClass} />
-            <select value={p.category} onChange={(e) => patchProduct(p.key, { category: e.target.value })} className={`${inputClass} w-24 shrink-0`}>
+          <div key={p.key} className="space-y-2 rounded-3xl border border-slate-100 bg-white p-2.5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <input value={p.emoji ?? ""} onChange={(e) => patchProduct(p.key, { emoji: e.target.value })} placeholder="🥕" className="h-10 w-12 shrink-0 rounded-xl border border-slate-200 text-center text-base outline-none" />
+              <input value={p.label ?? ""} onChange={(e) => patchProduct(p.key, { label: e.target.value })} placeholder={format("Mahsulot nomi")} className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 px-3 text-sm outline-none" />
+              <button onClick={() => removeProduct(p.key)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-500">
+                <Trash2 size={14} />
+              </button>
+            </div>
+            <select value={p.category} onChange={(e) => patchProduct(p.key, { category: e.target.value })} className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2 text-xs outline-none">
               {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.emoji}</option>
+                <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>
               ))}
             </select>
-            <button onClick={() => removeProduct(p.key)} className="shrink-0 rounded-xl bg-red-50 p-2 text-red-500">
-              <Trash2 size={14} />
-            </button>
           </div>
         ))}
       </div>
@@ -11950,6 +11668,81 @@ function ProductCatalogAdmin() {
       <button onClick={addProduct} className="h-11 w-full rounded-2xl bg-slate-900 text-sm font-bold text-white">
         + {format("Mahsulot qo'shish")}
       </button>
+      <button onClick={resetDefaults} className="h-10 w-full rounded-2xl bg-slate-100 text-xs font-bold text-slate-600">
+        🔄 {format("Standart katalogga qaytish")}
+      </button>
+      <button onClick={save} className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white">
+        {saved ? format("✅ Saqlandi") : format("Saqlash")}
+      </button>
+    </div>
+  );
+}
+
+// =========================
+// BANNER ADMIN
+// =========================
+function BannerAdmin() {
+  const { format } = useApp();
+
+  const [title, setTitle] = useState("");
+  const [badge, setBadge] = useState("");
+  const [image, setImage] = useState("");
+  const [linkText, setLinkText] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminRequest("get_banner")
+      .then((res) => {
+        const b = res.data?.value;
+        if (b) {
+          setTitle(b.title ?? "");
+          setBadge(b.badge ?? "");
+          setImage(b.image ?? "");
+          setLinkText(b.linkText ?? "");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    await adminRequest("save_banner", {
+      value: {
+        title,
+        badge,
+        image,
+        linkText,
+      },
+    });
+
+    hapticNotification("success");
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  return (
+    <div className="space-y-3 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+      <p className="text-sm font-bold text-slate-900">{format("Bosh sahifa banneri")}</p>
+
+      <div>
+        <label className="text-xs font-bold text-slate-500">{format("Badge (masalan: TOP RETSEPT)")}</label>
+        <input value={badge} onChange={(e) => setBadge(e.target.value)} className={inputClass} />
+      </div>
+
+      <div>
+        <label className="text-xs font-bold text-slate-500">{format("Sarlavha")}</label>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+      </div>
+
+      <div>
+        <label className="text-xs font-bold text-slate-500">{format("Rasm URL")}</label>
+        <ImageUploader value={image} onChange={setImage} />
+      </div>
+
+      <div>
+        <label className="text-xs font-bold text-slate-500">{format("Tugma matni")}</label>
+        <input value={linkText} onChange={(e) => setLinkText(e.target.value)} className={inputClass} />
+      </div>
+
       <button onClick={save} className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white">
         {saved ? format("✅ Saqlandi") : format("Saqlash")}
       </button>
@@ -12948,10 +12741,10 @@ export default function TimerModal() {
 ## 📄 webapp/src/components/recipes/RecipeCard.tsx
 
 `typescript
-import { ChefHat, Clock3, Heart } from "lucide-react";
+import { Clock3, Heart } from "lucide-react";
 import { motion } from "motion/react";
 import { useApp } from "../../context/AppContext";
-import { getDifficultyKey } from "../../lib/recipe-utils";
+import { getCategoryEmoji, getDifficultyKey } from "../../lib/recipe-utils";
 import { hapticImpact } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Recipe } from "../../types";
@@ -12992,8 +12785,8 @@ export default function RecipeCard({
             {recipe.emoji}
           </div>
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-[#DB2777]/40">
-            <ChefHat size={34} />
+          <div className="flex h-full w-full items-center justify-center text-5xl">
+            {getCategoryEmoji(recipe.category)}
           </div>
         )}
         {badge ? (
@@ -13855,7 +13648,7 @@ export default function GlobalSearch({
   };
 
   return (
-    <div className="relative z-40">
+    <div className="relative z-[60]">
       <div className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm focus-within:border-[#DB2777]/40">
         <Search size={17} className="text-slate-400" />
         <input
@@ -13877,7 +13670,7 @@ export default function GlobalSearch({
             <button
               key={`r-${r.id}`}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onOpenRecipe(r); setFocused(false); }}
+              onClick={() => { inputRef.current?.blur(); onOpenRecipe(r); setFocused(false); }}
               className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-slate-50"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-pink-50 text-[#DB2777]">
@@ -13895,7 +13688,7 @@ export default function GlobalSearch({
             <button
               key={`l-${l.id}`}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onOpenLifehack(l); setFocused(false); }}
+              onClick={() => { inputRef.current?.blur(); onOpenLifehack(l); setFocused(false); }}
               className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-slate-50"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
@@ -15774,6 +15567,30 @@ export function getUniqueIngredients(recipes: Recipe[]): string[] {
   return Array.from(map.values()).sort((a, b) => a.localeCompare(b, "uz"));
 }
 
+const CATEGORY_EMOJIS: Record<string, string> = {
+  "asosiy taom": "🍲",
+  "suyuq taom": "🍜",
+  "quyuq taom": "🥘",
+  salat: "🥗",
+  pishiriq: "🥧",
+  shirinlik: "🍰",
+  ichimlik: "🧃",
+  "yengil tamaddi": "🥪",
+  oshxona: "🍳",
+  "ro'zg'or": "🏠",
+  tejamkorlik: "💡",
+  burchak: "✨",
+};
+
+export function getCategoryEmoji(cat?: string): string {
+  if (!cat) return "🍳";
+  const lower = cat.toLowerCase().trim();
+  for (const [k, v] of Object.entries(CATEGORY_EMOJIS)) {
+    if (lower.includes(k)) return v;
+  }
+  return "🍳";
+}
+
 `
 
 ---
@@ -16588,7 +16405,7 @@ export default function LifehacksPage() {
                     {countByCategory.get(cat) ?? 0} {t("countSuffix")}
                   </span>
                 </div>
-                <h3 className="mt-3 line-clamp-1 font-display text-sm font-bold text-slate-800">{format(cat)}</h3>
+                <h3 className="mt-3 line-clamp-2 min-h-[32px] font-display text-[13px] font-bold leading-4 text-slate-800">{format(cat)}</h3>
               </motion.button>
             ))}
           </div>
