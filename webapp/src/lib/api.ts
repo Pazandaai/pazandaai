@@ -1,3 +1,4 @@
+import { compressImage } from "./compress";
 import { getInitData } from "./telegram";
 
 const API_BASE = (
@@ -33,27 +34,48 @@ export interface UploadResponse {
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
   const url = `${API_BASE}${path}`;
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(
+      `Serverga ulanib bo'lmadi: ${url}. ` +
+      `Internet aloqasini va VITE_API_BASE_URL ni tekshiring.`,
+    );
+  }
 
   const contentType = response.headers.get("content-type") || "";
 
   if (!contentType.includes("application/json")) {
+    const text = await response.text().catch(() => "");
+
+    let hint = "";
+    if (response.status === 404) {
+      hint =
+        "Manzil topilmadi. VITE_API_BASE_URL to'g'ri sozlanganmi? " +
+        "Lokal test uchun 'npx vercel dev' ishlatib ko'ring.";
+    } else if (response.status >= 500) {
+      hint =
+        "Server ichki xatosi. Vercel Function Logs ni tekshiring " +
+        "(env kalitlar yo'q bo'lishi mumkin).";
+    }
+
     throw new Error(
-      `API JSON qaytarmadi (${response.status}). ` +
-      `Lokal test uchun VITE_API_BASE_URL yoki vercel dev ishlatib ko'ring.`
+      `API JSON qaytarmadi (status ${response.status}). URL: ${url}. ${hint} ` +
+      (text ? `Javob: ${text.slice(0, 150)}` : ""),
     );
   }
 
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok || !data.ok) {
-    throw new Error(data.error || `API error: ${response.status}`);
+    throw new Error(data.error || `API xatosi: ${response.status}`);
   }
 
   return data as T;
@@ -62,12 +84,10 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-
     reader.onload = () => {
       const result = String(reader.result || "");
       resolve(result.split(",")[1] || "");
     };
-
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
@@ -83,12 +103,36 @@ export async function uploadImage(
   file: Blob,
   purpose: "premium_screenshot" | "admin_image",
 ): Promise<UploadResponse> {
-  const contentType = file.type || "image/jpeg";
-  const filename =
-    file instanceof File ? file.name : "image.jpg";
+  // 1) Rasmni siqish — sifatni yo'qotmagan holda
+  let blobToUpload: Blob = file;
+  let contentType = file.type || "image/jpeg";
 
-  const dataBase64 = await blobToBase64(file);
+  try {
+    const compressed = await compressImage(file, {
+      maxWidth: 1600,
+      maxHeight: 1600,
+      quality: 0.85,
+      mimeType: "image/jpeg",
+    });
 
+    blobToUpload = compressed.blob;
+    contentType = compressed.blob.type || "image/jpeg";
+
+    console.log(
+      `[upload] Siqildi: ${(compressed.originalSize / 1024).toFixed(0)}KB → ` +
+      `${(compressed.compressedSize / 1024).toFixed(0)}KB ` +
+      `(${compressed.width}x${compressed.height})`,
+    );
+  } catch (err) {
+    console.warn("[upload] Siqishda xato, asl rasm yuboriladi:", err);
+  }
+
+  // 2) Base64 ga o'girish
+  const dataBase64 = await blobToBase64(blobToUpload);
+
+  const filename = file instanceof File ? file.name : "image.jpg";
+
+  // 3) Yuborish
   return postJSON<UploadResponse>("/api/upload", {
     initData: getInitData(),
     purpose,
