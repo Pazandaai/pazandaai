@@ -1,4 +1,4 @@
-import { CheckCircle2, ImagePlus, Loader2 } from "lucide-react";
+import { CheckCircle2, ExternalLink, ImagePlus, Loader2 } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { useApp } from "../../context/AppContext";
@@ -80,9 +80,21 @@ export default function ImageUploader({
             />
           </div>
 
-          <div className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700">
-            <CheckCircle2 size={13} className="shrink-0 text-emerald-600" />
-            <span>☁️ Cloudflare R2 tezkor xotirasiga yuklandi</span>
+          <div className="rounded-2xl bg-emerald-50 p-2.5">
+            <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-emerald-700">
+              <CheckCircle2 size={14} className="shrink-0 text-emerald-600" />
+              <span>☁️ Cloudflare R2 ga yuklandi</span>
+            </div>
+
+            <a
+              href={value}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 flex items-center gap-1 text-[10px] font-bold text-emerald-600 underline truncate"
+            >
+              <span className="truncate">{value}</span>
+              <ExternalLink size={10} className="shrink-0" />
+            </a>
           </div>
         </div>
       ) : (
