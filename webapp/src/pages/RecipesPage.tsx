@@ -105,8 +105,14 @@ export default function RecipesPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center p-8 text-center text-sm font-semibold text-slate-400">
-        {t("loading")}
+      <div className="space-y-4">
+        <div className="h-12 animate-pulse rounded-3xl bg-slate-200/70" />
+        <div className="h-12 animate-pulse rounded-3xl bg-slate-200/70" />
+        <div className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-52 animate-pulse rounded-3xl bg-slate-200/70" />
+          ))}
+        </div>
       </div>
     );
   }

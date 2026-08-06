@@ -52,7 +52,7 @@ export default function ModalShell({
               </div>
             </div>
 
-            <div className="max-h-[72vh] overflow-y-auto px-4 pb-8 pt-3">
+            <div className="max-h-[72vh] select-none overflow-y-auto px-4 pb-8 pt-3">
               {children}
             </div>
           </motion.div>

@@ -1,38 +1,30 @@
 import { ChevronDown, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-
 import { useApp } from "../../context/AppContext";
 import { hapticNotification } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Lifehack } from "../../types/lifehack";
+import RichText from "../ui/RichText";
 
-interface LifehackCardProps {
-  lifehack: Lifehack;
-}
-
-export default function LifehackCard({ lifehack }: LifehackCardProps) {
+export default function LifehackCard({ lifehack }: { lifehack: Lifehack }) {
   const { format, t } = useApp();
-
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const copyContent = async () => {
     try {
-      const text = `${format(lifehack.title)}\n\n${format(lifehack.content)}`;
-
-      await navigator.clipboard.writeText(text);
-
+      await navigator.clipboard.writeText(
+        `${format(lifehack.title)}\n${format(lifehack.content)}`,
+      );
       setCopied(true);
       hapticNotification("success");
-
-      setTimeout(() => {
-        setCopied(false);
-      }, 1500);
-    } catch {
-      // ignore
-    }
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
   };
+
+  // Preview uchun ** belgilarni tozalash
+  const plainPreview = lifehack.content.replace(/\*\*/g, "").replace(/\n+/g, " ");
 
   return (
     <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -41,14 +33,12 @@ export default function LifehackCard({ lifehack }: LifehackCardProps) {
           <h3 className="font-display text-sm font-bold leading-5 text-slate-900">
             {format(lifehack.title)}
           </h3>
-
           {lifehack.category ? (
             <span className="mt-2 inline-block rounded-full bg-[#DB2777]/10 px-2.5 py-1 text-[10px] font-bold text-[#DB2777]">
               {format(lifehack.category)}
             </span>
           ) : null}
         </div>
-
         <button
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
@@ -56,17 +46,14 @@ export default function LifehackCard({ lifehack }: LifehackCardProps) {
         >
           <ChevronDown
             size={17}
-            className={cn(
-              "transition-transform duration-200",
-              expanded ? "rotate-180" : "rotate-0",
-            )}
+            className={cn("transition-transform duration-200", expanded ? "rotate-180" : "rotate-0")}
           />
         </button>
       </div>
 
       {!expanded ? (
         <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-500">
-          {format(lifehack.content)}
+          {format(plainPreview)}
         </p>
       ) : null}
 
@@ -81,19 +68,12 @@ export default function LifehackCard({ lifehack }: LifehackCardProps) {
           >
             {lifehack.image_url ? (
               <div className="mt-3 overflow-hidden rounded-2xl">
-                <img
-                  src={lifehack.image_url}
-                  alt={format(lifehack.title)}
-                  loading="lazy"
-                  className="aspect-[16/9] w-full object-cover"
-                />
+                <img src={lifehack.image_url} alt={format(lifehack.title)} loading="lazy" className="aspect-[16/9] w-full object-cover" />
               </div>
             ) : null}
-
-            <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">
-              {format(lifehack.content)}
-            </p>
-
+            <div className="mt-3">
+              <RichText text={format(lifehack.content)} />
+            </div>
             <button
               onClick={copyContent}
               className="mt-4 flex h-10 items-center gap-2 rounded-2xl bg-slate-900 px-4 text-xs font-bold text-white"
