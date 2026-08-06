@@ -1,4 +1,5 @@
 # 🛠 PAZANDA AI — TO'LIQ KOD BAZASI (BOT + WEBAPP)
+
 Ushbu fayl Telegram Bot hamda React WebApp loyihalarining barcha manba kodlarini bitta faylga jamlagan loyiha hujjatidir.
 
 ---
