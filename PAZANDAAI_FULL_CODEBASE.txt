@@ -2667,7 +2667,7 @@ STRINGS: dict[str, str] = {
     "ban": "⛔ Ban",
     "unban": "✅ Unban",
     "user_banned": "Foydalanuvchi banlandi.",
-    "user_unbanned": "Foydalanuvchi banlandan chiqarildi.",
+    "user_unbanned": "Foydalanuvchi bandan chiqarildi.",
 
     "payment_approved": "✅ To‘lov tasdiqlandi. Premium {date} gacha faollashtirildi.",
     "payment_rejected": "❌ To‘lov rad etildi. Screenshotni qayta yuborishingiz mumkin.",
@@ -8273,23 +8273,12 @@ export default async function handler(
       // STATISTIKA
       // =====================
       case "stats": {
-        const allUsers = await supabaseFetch("GET", "users", {
-          select: "telegram_id,is_premium,is_banned",
-          limit: 10000,
-        }).catch(() => []);
-        const allPending = await supabaseFetch("GET", "premium_requests", {
-          select: "id",
-          status: "eq.pending",
-          limit: 10000,
-        }).catch(() => []);
-        const allRecipes = await supabaseFetch("GET", "recipes", {
-          select: "id",
-          limit: 10000,
-        }).catch(() => []);
-        const allLifehacks = await supabaseFetch("GET", "lifehacks", {
-          select: "id",
-          limit: 10000,
-        }).catch(() => []);
+        const [allUsers, allPending, allRecipes, allLifehacks] = await Promise.all([
+          supabaseFetch("GET", "users", { select: "telegram_id,is_premium,is_banned", limit: 10000 }).catch(() => []),
+          supabaseFetch("GET", "premium_requests", { select: "id", status: "eq.pending", limit: 10000 }).catch(() => []),
+          supabaseFetch("GET", "recipes", { select: "id", limit: 10000 }).catch(() => []),
+          supabaseFetch("GET", "lifehacks", { select: "id", limit: 10000 }).catch(() => []),
+        ]);
         return res.status(200).json({
           ok: true,
           data: {
@@ -12744,7 +12733,7 @@ export default function TimerModal() {
 import { Clock3, Heart } from "lucide-react";
 import { motion } from "motion/react";
 import { useApp } from "../../context/AppContext";
-import { getCategoryEmoji, getDifficultyKey } from "../../lib/recipe-utils";
+import { getDifficultyKey, getRecipeCategoryEmoji } from "../../lib/recipe-utils";
 import { hapticImpact } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Recipe } from "../../types";
@@ -12785,8 +12774,8 @@ export default function RecipeCard({
             {recipe.emoji}
           </div>
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-5xl">
-            {getCategoryEmoji(recipe.category)}
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-pink-50 to-rose-100 text-6xl">
+            {getRecipeCategoryEmoji(recipe.category)}
           </div>
         )}
         {badge ? (
@@ -14002,12 +13991,7 @@ const AppContext = createContext<AppContextValue | undefined>(undefined);
 function getInitialUser(): AppUser {
   const tgUser = getTelegramUser();
 
-  console.log("[AppContext] Telegram user:", tgUser);
-  console.log("[AppContext] window.Telegram:", window.Telegram);
-  console.log("[AppContext] WebApp:", window.Telegram?.WebApp);
-
   if (tgUser) {
-    console.log("[AppContext] Using Telegram user:", tgUser);
     return {
       id: tgUser.id,
       firstName: tgUser.first_name,
@@ -14018,8 +14002,6 @@ function getInitialUser(): AppUser {
       isPremium: false,
     };
   }
-
-  console.warn("[AppContext] Telegram user yo'q, fallback ishlatilmoqda");
 
   return {
     id: 0,
@@ -14726,6 +14708,7 @@ export function cacheSet(key: string, data: unknown): void {
 
 `typescript
 import { useEffect, useState } from "react";
+import { tgHeaders } from "./api";
 import {
   DEFAULT_CATEGORIES,
   DEFAULT_PRODUCTS,
@@ -14745,7 +14728,7 @@ export function useProductCatalog() {
   const [products, setProducts] = useState<Product[]>(DEFAULT_PRODUCTS);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/product-catalog`, { cache: "no-store" })
+    fetch(`${API_BASE}/api/product-catalog`, { cache: "no-store", headers: tgHeaders() })
       .then((r) => r.json())
       .then((j) => {
         const v = j?.value;
@@ -15087,6 +15070,11 @@ export function getCategoryEmoji(category?: string): string {
   }
 
   return "💡";
+}
+
+export function capitalizeFirst(s: string): string {
+  const t = (s ?? "").trim();
+  return t ? t.charAt(0).toLocaleUpperCase() + t.slice(1) : t;
 }
 
 `
@@ -15589,6 +15577,25 @@ export function getCategoryEmoji(cat?: string): string {
     if (lower.includes(k)) return v;
   }
   return "🍳";
+}
+
+export function getRecipeCategoryEmoji(category?: string): string {
+  const v = (category ?? "").toLowerCase();
+  if (!v) return "🍽️";
+  if (v.includes("palov") || v.includes("quyuq") || v.includes("asosiy")) return "🍚";
+  if (v.includes("sho'rva") || v.includes("mastava")) return "🍲";
+  if (v.includes("salat") || v.includes("gazak")) return "🥗";
+  if (v.includes("tort") || v.includes("chizkeyk")) return "🎂";
+  if (v.includes("pechenye") || v.includes("biskvit")) return "🍪";
+  if (v.includes("pirog") || v.includes("tart")) return "🥧";
+  if (v.includes("shirin") || v.includes("pishiriq") || v.includes("nonushta") || v.includes("xamir")) return "🍰";
+  if (v.includes("go'sht") || v.includes("parranda")) return "🍖";
+  if (v.includes("garnir") || v.includes("sabzavot")) return "🥦";
+  if (v.includes("ichimlik") || v.includes("kokteyl")) return "🥤";
+  if (v.includes("muzqaymoq") || v.includes("sovuq")) return "🍨";
+  if (v.includes("turk")) return "🇹🇷";
+  if (v.includes("koreys") || v.includes("dunyo")) return "🌍";
+  return "🍽️";
 }
 
 `
@@ -16317,7 +16324,7 @@ import { fetchLifehacks, getLifehackCategories } from "../api/lifehacks";
 import LifehackCard from "../components/lifehacks/LifehackCard";
 import { useApp } from "../context/AppContext";
 import { registerBack, runBack } from "../lib/back";
-import { getCategoryEmoji, normalizeText } from "../lib/lifehack-utils";
+import { capitalizeFirst, getCategoryEmoji, normalizeText } from "../lib/lifehack-utils";
 import type { Lifehack } from "../types/lifehack";
 
 const FOLDER_GRADIENTS = [
@@ -16405,7 +16412,7 @@ export default function LifehacksPage() {
                     {countByCategory.get(cat) ?? 0} {t("countSuffix")}
                   </span>
                 </div>
-                <h3 className="mt-3 line-clamp-2 min-h-[32px] font-display text-[13px] font-bold leading-4 text-slate-800">{format(cat)}</h3>
+                <h3 className="mt-3 line-clamp-2 min-h-[32px] font-display text-[13px] font-bold leading-4 text-slate-800">{format(capitalizeFirst(cat))}</h3>
               </motion.button>
             ))}
           </div>
@@ -16418,7 +16425,7 @@ export default function LifehacksPage() {
                 <ChevronLeft size={18} />
               </button>
               <span className="text-xl">{getCategoryEmoji(selectedCategory)}</span>
-              <h2 className="font-display text-base font-extrabold text-slate-900">{format(selectedCategory)}</h2>
+              <h2 className="font-display text-base font-extrabold text-slate-900">{format(capitalizeFirst(selectedCategory))}</h2>
             </div>
           ) : null}
           {visible.length === 0 ? (
@@ -16611,6 +16618,7 @@ import { ChevronLeft, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { fetchRecipes } from "../api/recipes";
+import { tgHeaders } from "../lib/api";
 import RecipeCard from "../components/recipes/RecipeCard";
 import RecipeModal from "../components/recipes/RecipeModal";
 import SmartMatchPanel from "../components/recipes/SmartMatchPanel";
@@ -16675,7 +16683,7 @@ export default function RecipesPage() {
   useEffect(() => {
     fetchRecipes().then(setRecipes).catch(() => {}).finally(() => setLoading(false));
     fetchLifehacks().then(setLifehacks).catch(() => {});
-    fetch(`${API_BASE}/api/category-images`).then((r) => r.json()).then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); }).catch(() => {});
+    fetch(`${API_BASE}/api/category-images`, { headers: tgHeaders() }).then((r) => r.json()).then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); }).catch(() => {});
   }, []);
 
   useEffect(() => {
