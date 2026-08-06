@@ -69,23 +69,12 @@ export default async function handler(
       // STATISTIKA
       // =====================
       case "stats": {
-        const allUsers = await supabaseFetch("GET", "users", {
-          select: "telegram_id,is_premium,is_banned",
-          limit: 10000,
-        }).catch(() => []);
-        const allPending = await supabaseFetch("GET", "premium_requests", {
-          select: "id",
-          status: "eq.pending",
-          limit: 10000,
-        }).catch(() => []);
-        const allRecipes = await supabaseFetch("GET", "recipes", {
-          select: "id",
-          limit: 10000,
-        }).catch(() => []);
-        const allLifehacks = await supabaseFetch("GET", "lifehacks", {
-          select: "id",
-          limit: 10000,
-        }).catch(() => []);
+        const [allUsers, allPending, allRecipes, allLifehacks] = await Promise.all([
+          supabaseFetch("GET", "users", { select: "telegram_id,is_premium,is_banned", limit: 10000 }).catch(() => []),
+          supabaseFetch("GET", "premium_requests", { select: "id", status: "eq.pending", limit: 10000 }).catch(() => []),
+          supabaseFetch("GET", "recipes", { select: "id", limit: 10000 }).catch(() => []),
+          supabaseFetch("GET", "lifehacks", { select: "id", limit: 10000 }).catch(() => []),
+        ]);
         return res.status(200).json({
           ok: true,
           data: {

@@ -2,6 +2,7 @@ import { ChevronLeft, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { fetchRecipes } from "../api/recipes";
+import { tgHeaders } from "../lib/api";
 import RecipeCard from "../components/recipes/RecipeCard";
 import RecipeModal from "../components/recipes/RecipeModal";
 import SmartMatchPanel from "../components/recipes/SmartMatchPanel";
@@ -66,7 +67,7 @@ export default function RecipesPage() {
   useEffect(() => {
     fetchRecipes().then(setRecipes).catch(() => {}).finally(() => setLoading(false));
     fetchLifehacks().then(setLifehacks).catch(() => {});
-    fetch(`${API_BASE}/api/category-images`).then((r) => r.json()).then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); }).catch(() => {});
+    fetch(`${API_BASE}/api/category-images`, { headers: tgHeaders() }).then((r) => r.json()).then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); }).catch(() => {});
   }, []);
 
   useEffect(() => {

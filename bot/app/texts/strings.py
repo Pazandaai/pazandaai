@@ -83,7 +83,7 @@ STRINGS: dict[str, str] = {
     "ban": "⛔ Ban",
     "unban": "✅ Unban",
     "user_banned": "Foydalanuvchi banlandi.",
-    "user_unbanned": "Foydalanuvchi banlandan chiqarildi.",
+    "user_unbanned": "Foydalanuvchi bandan chiqarildi.",
 
     "payment_approved": "✅ To‘lov tasdiqlandi. Premium {date} gacha faollashtirildi.",
     "payment_rejected": "❌ To‘lov rad etildi. Screenshotni qayta yuborishingiz mumkin.",

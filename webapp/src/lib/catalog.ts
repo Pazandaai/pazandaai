@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { tgHeaders } from "./api";
 import {
   DEFAULT_CATEGORIES,
   DEFAULT_PRODUCTS,
@@ -18,7 +19,7 @@ export function useProductCatalog() {
   const [products, setProducts] = useState<Product[]>(DEFAULT_PRODUCTS);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/product-catalog`, { cache: "no-store" })
+    fetch(`${API_BASE}/api/product-catalog`, { cache: "no-store", headers: tgHeaders() })
       .then((r) => r.json())
       .then((j) => {
         const v = j?.value;

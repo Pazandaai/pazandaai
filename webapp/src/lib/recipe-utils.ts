@@ -306,3 +306,22 @@ export function getCategoryEmoji(cat?: string): string {
   }
   return "🍳";
 }
+
+export function getRecipeCategoryEmoji(category?: string): string {
+  const v = (category ?? "").toLowerCase();
+  if (!v) return "🍽️";
+  if (v.includes("palov") || v.includes("quyuq") || v.includes("asosiy")) return "🍚";
+  if (v.includes("sho'rva") || v.includes("mastava")) return "🍲";
+  if (v.includes("salat") || v.includes("gazak")) return "🥗";
+  if (v.includes("tort") || v.includes("chizkeyk")) return "🎂";
+  if (v.includes("pechenye") || v.includes("biskvit")) return "🍪";
+  if (v.includes("pirog") || v.includes("tart")) return "🥧";
+  if (v.includes("shirin") || v.includes("pishiriq") || v.includes("nonushta") || v.includes("xamir")) return "🍰";
+  if (v.includes("go'sht") || v.includes("parranda")) return "🍖";
+  if (v.includes("garnir") || v.includes("sabzavot")) return "🥦";
+  if (v.includes("ichimlik") || v.includes("kokteyl")) return "🥤";
+  if (v.includes("muzqaymoq") || v.includes("sovuq")) return "🍨";
+  if (v.includes("turk")) return "🇹🇷";
+  if (v.includes("koreys") || v.includes("dunyo")) return "🌍";
+  return "🍽️";
+}

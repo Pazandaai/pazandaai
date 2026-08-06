@@ -5,7 +5,7 @@ import { fetchLifehacks, getLifehackCategories } from "../api/lifehacks";
 import LifehackCard from "../components/lifehacks/LifehackCard";
 import { useApp } from "../context/AppContext";
 import { registerBack, runBack } from "../lib/back";
-import { getCategoryEmoji, normalizeText } from "../lib/lifehack-utils";
+import { capitalizeFirst, getCategoryEmoji, normalizeText } from "../lib/lifehack-utils";
 import type { Lifehack } from "../types/lifehack";
 
 const FOLDER_GRADIENTS = [
@@ -93,7 +93,7 @@ export default function LifehacksPage() {
                     {countByCategory.get(cat) ?? 0} {t("countSuffix")}
                   </span>
                 </div>
-                <h3 className="mt-3 line-clamp-2 min-h-[32px] font-display text-[13px] font-bold leading-4 text-slate-800">{format(cat)}</h3>
+                <h3 className="mt-3 line-clamp-2 min-h-[32px] font-display text-[13px] font-bold leading-4 text-slate-800">{format(capitalizeFirst(cat))}</h3>
               </motion.button>
             ))}
           </div>
@@ -106,7 +106,7 @@ export default function LifehacksPage() {
                 <ChevronLeft size={18} />
               </button>
               <span className="text-xl">{getCategoryEmoji(selectedCategory)}</span>
-              <h2 className="font-display text-base font-extrabold text-slate-900">{format(selectedCategory)}</h2>
+              <h2 className="font-display text-base font-extrabold text-slate-900">{format(capitalizeFirst(selectedCategory))}</h2>
             </div>
           ) : null}
           {visible.length === 0 ? (

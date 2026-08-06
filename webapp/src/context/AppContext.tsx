@@ -72,12 +72,7 @@ const AppContext = createContext<AppContextValue | undefined>(undefined);
 function getInitialUser(): AppUser {
   const tgUser = getTelegramUser();
 
-  console.log("[AppContext] Telegram user:", tgUser);
-  console.log("[AppContext] window.Telegram:", window.Telegram);
-  console.log("[AppContext] WebApp:", window.Telegram?.WebApp);
-
   if (tgUser) {
-    console.log("[AppContext] Using Telegram user:", tgUser);
     return {
       id: tgUser.id,
       firstName: tgUser.first_name,
@@ -88,8 +83,6 @@ function getInitialUser(): AppUser {
       isPremium: false,
     };
   }
-
-  console.warn("[AppContext] Telegram user yo'q, fallback ishlatilmoqda");
 
   return {
     id: 0,

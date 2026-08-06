@@ -70,3 +70,8 @@ export function getCategoryEmoji(category?: string): string {
 
   return "💡";
 }
+
+export function capitalizeFirst(s: string): string {
+  const t = (s ?? "").trim();
+  return t ? t.charAt(0).toLocaleUpperCase() + t.slice(1) : t;
+}
