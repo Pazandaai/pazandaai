@@ -1,12 +1,12 @@
 import { createHash, createHmac, randomUUID } from "crypto";
 import { requireEnv } from "./env.js";
 
-function hmac(key: Buffer | string, data: string): Buffer {
-  return createHmac("sha256", key).update(data, "utf8").digest();
+function hmac(key: Uint8Array | string, data: string): Uint8Array {
+  return new Uint8Array(createHmac("sha256", key).update(data, "utf8").digest());
 }
 
-function sha256Hex(data: string | Buffer): string {
-  return createHash("sha256").update(data).digest("hex");
+function sha256Hex(data: Uint8Array | string): string {
+  return createHash("sha256", undefined).update(data).digest("hex");
 }
 
 function getExtension(contentType: string): string {
@@ -32,7 +32,8 @@ export async function uploadBase64ToR2(options: {
     publicBaseUrl = `https://${publicBaseUrl}`;
   }
 
-  const body = Buffer.from(options.dataBase64, "base64");
+  const rawBuffer = Buffer.from(options.dataBase64, "base64");
+  const body = new Uint8Array(rawBuffer);
   const extension = getExtension(options.contentType);
   const key = `${options.keyPrefix}/${options.userId}/${randomUUID()}.${extension}`;
 
@@ -94,7 +95,7 @@ export async function uploadBase64ToR2(options: {
       ...headers,
       Authorization: `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
     },
-    body,
+    body: body as unknown as BodyInit,
   });
 
   if (!response.ok) {
