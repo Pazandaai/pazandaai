@@ -143,7 +143,10 @@ async def admin_broadcast_execute(message: Message, state: FSMContext) -> None:
 
         try:
             translated_text = t(user_lang, broadcast_text) if user_lang != "latn" else broadcast_text
-            await message.bot.send_message(user_id, translated_text)
+            try:
+                await message.bot.send_message(user_id, translated_text)
+            except Exception:
+                await message.bot.send_message(user_id, translated_text, parse_mode=None)
             sent_count += 1
             await asyncio.sleep(0.05)
         except Exception:

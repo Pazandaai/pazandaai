@@ -9656,87 +9656,69 @@ export async function fetchRecipes(): Promise<Recipe[]> {
 `typescript
 import { BookOpen, Home, Lightbulb, User, type LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
-
+import { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
 import type { I18nKey } from "../lib/i18n";
 import { hapticSelection } from "../lib/telegram";
 import { cn } from "../lib/utils";
 import type { TabId } from "../types";
 
-interface TabItem {
-  id: TabId;
-  icon: LucideIcon;
-  labelKey: I18nKey;
-}
+interface TabItem { id: TabId; icon: LucideIcon; labelKey: I18nKey; }
 
 const TABS: TabItem[] = [
-  {
-    id: "home",
-    icon: Home,
-    labelKey: "tabHome",
-  },
-  {
-    id: "recipes",
-    icon: BookOpen,
-    labelKey: "tabRecipes",
-  },
-  {
-    id: "lifehacks",
-    icon: Lightbulb,
-    labelKey: "tabLifehacks",
-  },
-  {
-    id: "profile",
-    icon: User,
-    labelKey: "tabProfile",
-  },
+  { id: "home", icon: Home, labelKey: "tabHome" },
+  { id: "recipes", icon: BookOpen, labelKey: "tabRecipes" },
+  { id: "lifehacks", icon: Lightbulb, labelKey: "tabLifehacks" },
+  { id: "profile", icon: User, labelKey: "tabProfile" },
 ];
 
 export default function BottomNav() {
   const { activeTab, setActiveTab, t } = useApp();
+  const [hidden, setHidden] = useState(false);
+
+  // ✅ Klaviatura ochilganda navbar yashirinadi
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => setHidden(window.innerHeight - vv.height > 180);
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
 
   return (
-    <nav className="safe-bottom fixed inset-x-0 bottom-0 z-50">
+    <motion.nav
+      animate={{ y: hidden ? 120 : 0, opacity: hidden ? 0 : 1 }}
+      transition={{ duration: 0.2 }}
+      className="safe-bottom fixed inset-x-0 bottom-0 z-50"
+    >
       <div className="mx-auto w-full max-w-md px-4 pb-4">
-        <div className="glass rounded-3xl border border-white/40 bg-white/90 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+        {/* ✅ bg-white/90 olib tashlandi — endi glass (shaffof + yengil blur) */}
+        <div className="glass rounded-3xl border border-white/40 shadow-[0_18px_40px_rgba(15,23,42,0.10)]">
           <div className="grid grid-cols-4 px-2 py-2">
             {TABS.map((tab) => {
               const active = activeTab === tab.id;
               const Icon = tab.icon;
-
               return (
                 <motion.button
                   key={tab.id}
                   whileTap={{ scale: 0.94 }}
                   onClick={() => {
-                    if (!active) {
-                      hapticSelection();
-                      setActiveTab(tab.id);
-                    }
+                    if (!active) { hapticSelection(); setActiveTab(tab.id); }
                   }}
                   className="relative flex flex-col items-center gap-1 rounded-2xl px-2 py-2"
                 >
                   {active ? (
                     <motion.span
                       layoutId="bottom-nav-active"
-                      transition={{
-                        type: "spring",
-                        bounce: 0.2,
-                        duration: 0.45,
-                      }}
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.45 }}
                       className="absolute inset-0 rounded-2xl bg-[#DB2777]/10"
                     />
                   ) : null}
-
                   <Icon
                     size={20}
                     strokeWidth={active ? 2.4 : 2}
-                    className={cn(
-                      "relative z-10 transition-colors",
-                      active ? "text-[#DB2777]" : "text-slate-400",
-                    )}
+                    className={cn("relative z-10 transition-colors", active ? "text-[#DB2777]" : "text-slate-500")}
                   />
-
                   <span
                     className={cn(
                       "relative z-10 text-[10px] font-semibold transition-colors",
@@ -9751,7 +9733,7 @@ export default function BottomNav() {
           </div>
         </div>
       </div>
-    </nav>
+    </motion.nav>
   );
 }
 
@@ -11644,38 +11626,30 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
 import { ChevronDown, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-
 import { useApp } from "../../context/AppContext";
 import { hapticNotification } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Lifehack } from "../../types/lifehack";
+import RichText from "../ui/RichText";
 
-interface LifehackCardProps {
-  lifehack: Lifehack;
-}
-
-export default function LifehackCard({ lifehack }: LifehackCardProps) {
+export default function LifehackCard({ lifehack }: { lifehack: Lifehack }) {
   const { format, t } = useApp();
-
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const copyContent = async () => {
     try {
-      const text = `${format(lifehack.title)}\n\n${format(lifehack.content)}`;
-
-      await navigator.clipboard.writeText(text);
-
+      await navigator.clipboard.writeText(
+        `${format(lifehack.title)}\n${format(lifehack.content)}`,
+      );
       setCopied(true);
       hapticNotification("success");
-
-      setTimeout(() => {
-        setCopied(false);
-      }, 1500);
-    } catch {
-      // ignore
-    }
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
   };
+
+  // Preview uchun ** belgilarni tozalash
+  const plainPreview = lifehack.content.replace(/\*\*/g, "").replace(/\n+/g, " ");
 
   return (
     <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -11684,14 +11658,12 @@ export default function LifehackCard({ lifehack }: LifehackCardProps) {
           <h3 className="font-display text-sm font-bold leading-5 text-slate-900">
             {format(lifehack.title)}
           </h3>
-
           {lifehack.category ? (
             <span className="mt-2 inline-block rounded-full bg-[#DB2777]/10 px-2.5 py-1 text-[10px] font-bold text-[#DB2777]">
               {format(lifehack.category)}
             </span>
           ) : null}
         </div>
-
         <button
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
@@ -11699,17 +11671,14 @@ export default function LifehackCard({ lifehack }: LifehackCardProps) {
         >
           <ChevronDown
             size={17}
-            className={cn(
-              "transition-transform duration-200",
-              expanded ? "rotate-180" : "rotate-0",
-            )}
+            className={cn("transition-transform duration-200", expanded ? "rotate-180" : "rotate-0")}
           />
         </button>
       </div>
 
       {!expanded ? (
         <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-500">
-          {format(lifehack.content)}
+          {format(plainPreview)}
         </p>
       ) : null}
 
@@ -11724,19 +11693,12 @@ export default function LifehackCard({ lifehack }: LifehackCardProps) {
           >
             {lifehack.image_url ? (
               <div className="mt-3 overflow-hidden rounded-2xl">
-                <img
-                  src={lifehack.image_url}
-                  alt={format(lifehack.title)}
-                  loading="lazy"
-                  className="aspect-[16/9] w-full object-cover"
-                />
+                <img src={lifehack.image_url} alt={format(lifehack.title)} loading="lazy" className="aspect-[16/9] w-full object-cover" />
               </div>
             ) : null}
-
-            <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">
-              {format(lifehack.content)}
-            </p>
-
+            <div className="mt-3">
+              <RichText text={format(lifehack.content)} />
+            </div>
             <button
               onClick={copyContent}
               className="mt-4 flex h-10 items-center gap-2 rounded-2xl bg-slate-900 px-4 text-xs font-bold text-white"
@@ -12217,7 +12179,6 @@ export default function TimerModal() {
 `typescript
 import { ChefHat, Clock3, Heart } from "lucide-react";
 import { motion } from "motion/react";
-
 import { useApp } from "../../context/AppContext";
 import { getDifficultyKey } from "../../lib/recipe-utils";
 import { hapticImpact } from "../../lib/telegram";
@@ -12227,19 +12188,17 @@ import type { Recipe } from "../../types";
 interface RecipeCardProps {
   recipe: Recipe;
   onOpen: (recipe: Recipe) => void;
-  badge?: {
-    label: string;
-    className: string;
-  };
+  badge?: { label: string; className: string };
+  missing?: string[];
 }
 
 export default function RecipeCard({
   recipe,
   onOpen,
   badge,
+  missing,
 }: RecipeCardProps) {
   const { favorites, format, t, toggleFavorite } = useApp();
-
   const isFavorite = favorites.includes(recipe.id);
   const difficultyKey = getDifficultyKey(recipe.difficulty);
 
@@ -12247,7 +12206,7 @@ export default function RecipeCard({
     <motion.button
       whileTap={{ scale: 0.98 }}
       onClick={() => onOpen(recipe)}
-      className="w-full overflow-hidden rounded-3xl border border-slate-100 bg-white text-left shadow-sm"
+      className="flex h-full w-full flex-col overflow-hidden rounded-3xl border border-slate-100 bg-white text-left shadow-sm"
     >
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-gradient-to-br from-pink-50 to-rose-100">
         {recipe.image_url ? (
@@ -12262,7 +12221,6 @@ export default function RecipeCard({
             <ChefHat size={34} />
           </div>
         )}
-
         {badge ? (
           <span
             className={cn(
@@ -12273,7 +12231,6 @@ export default function RecipeCard({
             {badge.label}
           </span>
         ) : null}
-
         <button
           onClick={(event) => {
             event.stopPropagation();
@@ -12286,13 +12243,10 @@ export default function RecipeCard({
           <Heart
             size={16}
             className={cn(
-              isFavorite
-                ? "fill-[#DB2777] text-[#DB2777]"
-                : "text-slate-400",
+              isFavorite ? "fill-[#DB2777] text-[#DB2777]" : "text-slate-400",
             )}
           />
         </button>
-
         {recipe.cook_time_minutes ? (
           <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-bold text-white">
             <Clock3 size={11} />
@@ -12301,24 +12255,29 @@ export default function RecipeCard({
         ) : null}
       </div>
 
-      <div className="p-3">
+      {/* ✅ teng balandlik uchun flex-1 + min-h */}
+      <div className="flex flex-1 flex-col p-3">
         <h3 className="line-clamp-1 font-display text-sm font-bold text-slate-900">
           {format(recipe.title)}
         </h3>
-
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="mt-2 flex min-h-[24px] flex-wrap items-center gap-1.5">
           {recipe.category ? (
             <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">
               {format(recipe.category)}
             </span>
           ) : null}
-
           {difficultyKey ? (
             <span className="rounded-full bg-[#DB2777]/10 px-2 py-1 text-[10px] font-semibold text-[#DB2777]">
               {t(difficultyKey)}
             </span>
           ) : null}
         </div>
+        {missing && missing.length ? (
+          <p className="mt-1.5 line-clamp-1 text-[10px] font-semibold text-amber-600">
+            {format("Yetmaydi")}: {missing.slice(0, 2).map(format).join(", ")}
+            {missing.length > 2 ? ` +${missing.length - 2}` : ""}
+          </p>
+        ) : null}
       </div>
     </motion.button>
   );
@@ -12331,70 +12290,69 @@ export default function RecipeCard({
 ## 📄 webapp/src/components/recipes/RecipeFilters.tsx
 
 `typescript
-import { Search } from "lucide-react";
-
+import { SlidersHorizontal, Search, X } from "lucide-react";
+import { useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { cn } from "../../lib/utils";
 import type { DifficultyKey } from "../../types";
+import ModalShell from "../ui/ModalShell";
 
 export type RecipeViewMode = "catalog" | "match";
 
 interface RecipeFiltersProps {
   query: string;
   onQueryChange: (value: string) => void;
-
   mode: RecipeViewMode;
   onModeChange: (mode: RecipeViewMode) => void;
-
   categories: string[];
   category: string | null;
   onCategoryChange: (category: string | null) => void;
-
   maxTime: number | null;
   onMaxTimeChange: (value: number | null) => void;
-
   difficulty: DifficultyKey | null;
   onDifficultyChange: (value: DifficultyKey | null) => void;
 }
 
-export default function RecipeFilters({
-  query,
-  onQueryChange,
-  mode,
-  onModeChange,
-  categories,
-  category,
-  onCategoryChange,
-  maxTime,
-  onMaxTimeChange,
-  difficulty,
-  onDifficultyChange,
-}: RecipeFiltersProps) {
+export default function RecipeFilters(props: RecipeFiltersProps) {
   const { t } = useApp();
+  const [open, setOpen] = useState(false);
+  const {
+    query, onQueryChange, mode, onModeChange,
+    categories, category, onCategoryChange,
+    maxTime, onMaxTimeChange, difficulty, onDifficultyChange,
+  } = props;
 
+  const activeCount =
+    (category ? 1 : 0) + (maxTime ? 1 : 0) + (difficulty ? 1 : 0);
   const times = [null, 15, 30, 60];
-
-  const difficulties: Array<{
-    value: DifficultyKey | null;
-    label: string;
-  }> = [
+  const difficulties: Array<{ value: DifficultyKey | null; label: string }> = [
     { value: null, label: t("all") },
     { value: "easy", label: t("easy") },
     { value: "medium", label: t("medium") },
     { value: "hard", label: t("hard") },
   ];
 
+  const chip = (active: boolean) =>
+    cn(
+      "rounded-full px-3.5 py-2 text-xs font-bold transition-colors",
+      active ? "bg-[#DB2777] text-white" : "bg-slate-100 text-slate-600",
+    );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <Search size={17} className="text-slate-400" />
-
         <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={t("searchRecipes")}
           className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
         />
+        {query ? (
+          <button onClick={() => onQueryChange("")} aria-label="Tozalash">
+            <X size={15} className="text-slate-400" />
+          </button>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-2 rounded-3xl bg-slate-100 p-1.5">
@@ -12402,21 +12360,16 @@ export default function RecipeFilters({
           onClick={() => onModeChange("catalog")}
           className={cn(
             "rounded-2xl px-3 py-2.5 text-sm font-bold transition-colors",
-            mode === "catalog"
-              ? "bg-white text-[#DB2777] shadow"
-              : "text-slate-500",
+            mode === "catalog" ? "bg-white text-[#DB2777] shadow" : "text-slate-500",
           )}
         >
           {t("catalog")}
         </button>
-
         <button
           onClick={() => onModeChange("match")}
           className={cn(
             "rounded-2xl px-3 py-2.5 text-sm font-bold transition-colors",
-            mode === "match"
-              ? "bg-white text-[#DB2777] shadow"
-              : "text-slate-500",
+            mode === "match" ? "bg-white text-[#DB2777] shadow" : "text-slate-500",
           )}
         >
           {t("aiMatch")}
@@ -12424,73 +12377,103 @@ export default function RecipeFilters({
       </div>
 
       {mode === "catalog" ? (
-        <div className="space-y-3">
-          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+        <button
+          onClick={() => setOpen(true)}
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-sm font-bold text-slate-700 shadow-sm"
+        >
+          <SlidersHorizontal size={15} className="text-[#DB2777]" />
+          {t("difficulty")} / {t("time")} / Kategoriya
+          {activeCount > 0 ? (
+            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#DB2777] px-1.5 text-[10px] font-extrabold text-white">
+              {activeCount}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
+
+      {/* ✅ Filtr sheet — wrap chiplar, chalkashlik yo'q */}
+      <ModalShell open={open} title={formatTitle(t("all"))} onClose={() => setOpen(false)}>
+        <div className="space-y-5">
+          <section className="space-y-2">
+            <h4 className="text-xs font-extrabold uppercase text-slate-400">Kategoriya</h4>
+            <div className="flex flex-wrap gap-2">
+              <button className={chip(category === null)} onClick={() => onCategoryChange(null)}>
+                {t("all")}
+              </button>
+              {categories.map((item) => (
+                <button
+                  key={item}
+                  className={chip(category === item)}
+                  onClick={() => onCategoryChange(category === item ? null : item)}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <h4 className="text-xs font-extrabold uppercase text-slate-400">{t("time")}</h4>
+            <div className="flex flex-wrap gap-2">
+              {times.map((time) => (
+                <button
+                  key={String(time)}
+                  className={cn(
+                    "rounded-full px-3.5 py-2 text-xs font-bold",
+                    maxTime === time ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600",
+                  )}
+                  onClick={() => onMaxTimeChange(time)}
+                >
+                  {time === null ? t("all") : `≤ ${time} ${t("minutes")}`}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <h4 className="text-xs font-extrabold uppercase text-slate-400">{t("difficulty")}</h4>
+            <div className="flex flex-wrap gap-2">
+              {difficulties.map((item) => (
+                <button
+                  key={String(item.value)}
+                  className={cn(
+                    "rounded-full px-3.5 py-2 text-xs font-bold",
+                    difficulty === item.value ? "bg-amber-400 text-slate-900" : "bg-slate-100 text-slate-600",
+                  )}
+                  onClick={() => onDifficultyChange(item.value)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => onCategoryChange(null)}
-              className={cn(
-                "shrink-0 rounded-full px-3.5 py-2 text-xs font-bold",
-                category === null
-                  ? "bg-[#DB2777] text-white"
-                  : "bg-white text-slate-500 shadow-sm",
-              )}
+              onClick={() => {
+                onCategoryChange(null);
+                onMaxTimeChange(null);
+                onDifficultyChange(null);
+              }}
+              className="h-11 rounded-2xl bg-slate-100 text-sm font-bold text-slate-600"
             >
-              {t("all")}
+              {t("matchClear")}
             </button>
-
-            {categories.map((item) => (
-              <button
-                key={item}
-                onClick={() => onCategoryChange(item)}
-                className={cn(
-                  "shrink-0 rounded-full px-3.5 py-2 text-xs font-bold",
-                  category === item
-                    ? "bg-[#DB2777] text-white"
-                    : "bg-white text-slate-500 shadow-sm",
-                )}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-
-          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-            {times.map((time) => (
-              <button
-                key={String(time)}
-                onClick={() => onMaxTimeChange(time)}
-                className={cn(
-                  "shrink-0 rounded-full px-3.5 py-2 text-xs font-bold",
-                  maxTime === time
-                    ? "bg-slate-900 text-white"
-                    : "bg-white text-slate-500 shadow-sm",
-                )}
-              >
-                {time === null ? t("all") : `≤ ${time} ${t("minutes")}`}
-              </button>
-            ))}
-          </div>
-
-          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-            {difficulties.map((item) => (
-              <button
-                key={String(item.value)}
-                onClick={() => onDifficultyChange(item.value)}
-                className={cn(
-                  "shrink-0 rounded-full px-3.5 py-2 text-xs font-bold",
-                  difficulty === item.value
-                    ? "bg-amber-400 text-slate-900"
-                    : "bg-white text-slate-500 shadow-sm",
-                )}
-              >
-                {item.label}
-              </button>
-            ))}
+            <button
+              onClick={() => setOpen(false)}
+              className="h-11 rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white"
+            >
+              {t("close")}
+            </button>
           </div>
         </div>
-      ) : null}
+      </ModalShell>
     </div>
   );
+}
+
+function formatTitle(v: string) {
+  return `Filtrlar — ${v}`;
 }
 
 `
@@ -12820,16 +12803,15 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
 ## 📄 webapp/src/components/recipes/SmartMatchPanel.tsx
 
 `typescript
-import { Sparkles, X } from "lucide-react";
-import { useMemo, useState } from "react";
-
+import { Search, Sparkles, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { useApp } from "../../context/AppContext";
 import {
   getRecipeMatch,
   getUniqueIngredients,
   normalizeIngredient,
 } from "../../lib/recipe-utils";
-import { hapticSelection } from "../../lib/telegram";
+import { hapticNotification, hapticSelection } from "../../lib/telegram";
 import type { Recipe } from "../../types";
 import RecipeCard from "./RecipeCard";
 
@@ -12843,9 +12825,10 @@ export default function SmartMatchPanel({
   onOpenRecipe,
 }: SmartMatchPanelProps) {
   const { format, t } = useApp();
-
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
   const [ingredientQuery, setIngredientQuery] = useState("");
+  const [showResults, setShowResults] = useState(false);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const allIngredients = useMemo(
     () => getUniqueIngredients(recipes),
@@ -12854,7 +12837,6 @@ export default function SmartMatchPanel({
 
   const candidates = useMemo(() => {
     const normalizedQuery = normalizeIngredient(ingredientQuery);
-
     return allIngredients
       .filter((ingredient) => !selectedIngredients.includes(ingredient))
       .filter((ingredient) =>
@@ -12867,7 +12849,6 @@ export default function SmartMatchPanel({
 
   const matches = useMemo(() => {
     if (!selectedIngredients.length) return [];
-
     return recipes
       .map((recipe) => ({
         recipe,
@@ -12885,40 +12866,46 @@ export default function SmartMatchPanel({
 
   const toggleIngredient = (ingredient: string) => {
     hapticSelection();
+    setSelectedIngredients((prev) =>
+      prev.includes(ingredient)
+        ? prev.filter((item) => item !== ingredient)
+        : [...prev, ingredient],
+    );
+  };
 
-    setSelectedIngredients((prev) => {
-      if (prev.includes(ingredient)) {
-        return prev.filter((item) => item !== ingredient);
-      }
+  // ✅ YANGI: tugma → natijalar + scroll
+  const findMatches = () => {
+    if (!selectedIngredients.length) return;
+    hapticNotification("success");
+    setShowResults(true);
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+  };
 
-      return [...prev, ingredient];
-    });
+  const badgeLabel = (item: (typeof matches)[number]) => {
+    const missingCount = item.match.missing.length;
+    if (!missingCount) return "100% mos";
+    return `${item.match.matchPercent}% • ${missingCount} ta yetmaydi`;
   };
 
   const renderGroup = (
     title: string,
     items: typeof matches,
     badgeClassName: string,
-    badgeLabelGetter?: (item: (typeof matches)[number]) => string,
   ) => {
     if (!items.length) return null;
-
     return (
       <section className="space-y-2">
         <h3 className="text-sm font-extrabold text-slate-900">{title}</h3>
-
         <div className="grid grid-cols-2 gap-3">
           {items.map((item) => (
             <RecipeCard
               key={item.recipe.id}
               recipe={item.recipe}
               onOpen={onOpenRecipe}
-              badge={{
-                label: badgeLabelGetter
-                  ? badgeLabelGetter(item)
-                  : title,
-                className: badgeClassName,
-              }}
+              badge={{ label: badgeLabel(item), className: badgeClassName }}
+              missing={item.match.missing.map((m) => m.name)}
             />
           ))}
         </div>
@@ -12931,15 +12918,11 @@ export default function SmartMatchPanel({
       <div className="rounded-3xl border border-[#DB2777]/10 bg-[#DB2777]/5 p-4">
         <div className="flex items-center gap-2 text-[#DB2777]">
           <Sparkles size={17} />
-          <h3 className="font-display text-sm font-extrabold">
-            {t("aiMatch")}
-          </h3>
+          <h3 className="font-display text-sm font-extrabold">{t("aiMatch")}</h3>
         </div>
-
         <p className="mt-2 text-xs leading-5 text-slate-600">
           {t("matchSelectIngredients")}
         </p>
-
         {selectedIngredients.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-2">
             {selectedIngredients.map((ingredient) => (
@@ -12952,9 +12935,11 @@ export default function SmartMatchPanel({
                 <X size={12} className="text-slate-400" />
               </button>
             ))}
-
             <button
-              onClick={() => setSelectedIngredients([])}
+              onClick={() => {
+                setSelectedIngredients([]);
+                setShowResults(false);
+              }}
               className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-bold text-white"
             >
               {t("matchClear")}
@@ -12963,12 +12948,15 @@ export default function SmartMatchPanel({
         ) : null}
       </div>
 
-      <input
-        value={ingredientQuery}
-        onChange={(event) => setIngredientQuery(event.target.value)}
-        placeholder={t("matchSearchIngredient")}
-        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-[#DB2777]/40"
-      />
+      <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+        <Search size={16} className="text-slate-400" />
+        <input
+          value={ingredientQuery}
+          onChange={(event) => setIngredientQuery(event.target.value)}
+          placeholder={t("matchSearchIngredient")}
+          className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+        />
+      </div>
 
       <div className="flex flex-wrap gap-2">
         {candidates.map((ingredient) => (
@@ -12982,37 +12970,44 @@ export default function SmartMatchPanel({
         ))}
       </div>
 
+      {/* ✅ MOS TAOMNI TOPISH tugmasi */}
       {selectedIngredients.length > 0 ? (
-        <p className="text-xs font-semibold text-slate-500">
-          {selectedIngredients.length} {t("matchSelected")}
-        </p>
+        <button
+          onClick={findMatches}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white shadow-lg active:scale-[0.98]"
+        >
+          <Sparkles size={16} />
+          {format("Mos taomni topish")} ({selectedIngredients.length}{" "}
+          {t("matchSelected")})
+        </button>
       ) : null}
 
-      {matches.length === 0 && selectedIngredients.length > 0 ? (
-        <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          {t("matchNoResults")}
-        </div>
-      ) : null}
-
-      <div className="space-y-5">
-        {renderGroup(
-          t("matchExact"),
-          exact,
-          "bg-emerald-50 text-emerald-600 ring-emerald-200",
-        )}
-
-        {renderGroup(
-          t("matchAlmost"),
-          almost,
-          "bg-amber-50 text-amber-600 ring-amber-200",
-        )}
-
-        {renderGroup(
-          t("matchPartial"),
-          partial,
-          "bg-sky-50 text-sky-600 ring-sky-200",
-          (item) => `${t("matchPartial")} ${item.match.matchPercent}%`,
-        )}
+      <div ref={resultsRef} className="space-y-5 scroll-mt-20">
+        {showResults && selectedIngredients.length > 0 ? (
+          matches.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+              {t("matchNoResults")}
+            </div>
+          ) : (
+            <>
+              {renderGroup(
+                t("matchExact"),
+                exact,
+                "bg-emerald-50 text-emerald-600 ring-emerald-200",
+              )}
+              {renderGroup(
+                t("matchAlmost"),
+                almost,
+                "bg-amber-50 text-amber-600 ring-amber-200",
+              )}
+              {renderGroup(
+                t("matchPartial"),
+                partial,
+                "bg-sky-50 text-sky-600 ring-sky-200",
+              )}
+            </>
+          )
+        ) : null}
       </div>
     </div>
   );
@@ -13079,13 +13074,49 @@ export default function ModalShell({
               </div>
             </div>
 
-            <div className="max-h-[72vh] overflow-y-auto px-4 pb-8 pt-3">
+            <div className="max-h-[72vh] select-none overflow-y-auto px-4 pb-8 pt-3">
               {children}
             </div>
           </motion.div>
         </div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+`
+
+---
+
+## 📄 webapp/src/components/ui/RichText.tsx
+
+`typescript
+function renderInline(text: string) {
+  const parts = text.split(/\*\*(.+?)\*\*/g);
+  return parts.map((part, i) =>
+    i % 2 === 1 ? (
+      <strong key={i} className="font-extrabold text-slate-800">
+        {part}
+      </strong>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
+
+export default function RichText({ text }: { text: string }) {
+  const lines = String(text || "")
+    .split(/\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return (
+    <div className="space-y-1.5">
+      {lines.map((line, i) => (
+        <p key={i} className="text-sm leading-6 text-slate-600">
+          {renderInline(line)}
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -14742,8 +14773,8 @@ export function makeId(): string {
 
 `typescript
 import { Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
+import { useEffect, useMemo, useState } from "react";
 import {
   fetchHomeBanner,
   normalizeBanner,
@@ -14761,18 +14792,24 @@ import { useSession } from "../hooks/useSession";
 import type { Recipe } from "../types";
 import type { Lifehack } from "../types/lifehack";
 
-function randomItems<T>(items: T[], count: number): T[] {
-  return [...items].sort(() => Math.random() - 0.5).slice(0, count);
+// ✅ Sana bilan seed — kun davomida bir xil tavsiyalar
+function seededShuffle<T>(items: T[], seed: string): T[] {
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i--) {
+    h = (h * 1664525 + 1013904223) >>> 0;
+    const j = h % (i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 }
 
-// Skeleton shimmer — Emil Kowalski style
 function SkeletonShimmer({ className }: { className?: string }) {
   return (
     <div
-      className={`animate-pulse rounded-3xl bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100 bg-[length:200%_100%] ${className}`}
-      style={{
-        animation: "shimmer 1.5s ease-in-out infinite",
-      }}
+      className={`rounded-3xl bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100 bg-[length:200%_100%] ${className}`}
+      style={{ animation: "shimmer 1.5s ease-in-out infinite" }}
     />
   );
 }
@@ -14781,59 +14818,50 @@ export default function HomePage() {
   const { format, openModal, setActiveTab, setRecipesSearchQuery } = useApp();
   const { isPremium, loading: sessionLoading } = useSession();
 
-  // ALOHIDA loading states — har biri mustaqil yuklanadi
   const [banner, setBanner] = useState<HomeBanner | null>(null);
   const [bannerLoading, setBannerLoading] = useState(true);
-
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipesLoading, setRecipesLoading] = useState(true);
-
   const [lifehacks, setLifehacks] = useState<Lifehack[]>([]);
   const [lifehacksLoading, setLifehacksLoading] = useState(true);
-
   const [searchValue, setSearchValue] = useState("");
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
-  // PARALLEL loading — lekin har biri o'z vaqtida tugaydi
   useEffect(() => {
-    // Banner BIRINCHI — eng muhim
     fetchHomeBanner()
-      .then((data) => {
-        setBanner(data);
-        setBannerLoading(false);
-      })
+      .then((data) => { setBanner(data); setBannerLoading(false); })
       .catch(() => setBannerLoading(false));
-
-    // Recipes ikkinchi
     fetchRecipes()
-      .then((data) => {
-        setRecipes(data);
-        setRecipesLoading(false);
-      })
+      .then((data) => { setRecipes(data); setRecipesLoading(false); })
       .catch(() => setRecipesLoading(false));
-
-    // Lifehacks uchinchi
     fetchLifehacks()
-      .then((data) => {
-        setLifehacks(data);
-        setLifehacksLoading(false);
-      })
+      .then((data) => { setLifehacks(data); setLifehacksLoading(false); })
       .catch(() => setLifehacksLoading(false));
   }, []);
 
   const slides = useMemo(() => normalizeBanner(banner), [banner]);
   const effectiveSlides: BannerSlide[] = slides.length
     ? slides
-    : [
-        {
-          id: "default",
-          title: "Pazanda AI",
-          subtitle: "Oilaviy oshxona yordamchisi",
-        },
-      ];
+    : [{ id: "default", title: "Pazanda AI", subtitle: "Oilaviy oshxona yordamchisi" }];
 
-  const dailyRecipes = useMemo(() => randomItems(recipes, 2), [recipes]);
-  const dailyLifehacks = useMemo(() => randomItems(lifehacks, 2), [lifehacks]);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const dailyRecipes = useMemo(
+    () => seededShuffle(recipes, `r-${todayKey}`).slice(0, 2),
+    [recipes, todayKey],
+  );
+  const dailyLifehacks = useMemo(
+    () => seededShuffle(lifehacks, `l-${todayKey}`).slice(0, 2),
+    [lifehacks, todayKey],
+  );
+
+  // ✅ LIVE qidiruv takliflari
+  const suggestions = useMemo(() => {
+    const q = searchValue.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return recipes
+      .filter((r) => r.title.toLowerCase().includes(q))
+      .slice(0, 5);
+  }, [searchValue, recipes]);
 
   const submitSearch = () => {
     setRecipesSearchQuery(searchValue.trim());
@@ -14842,9 +14870,8 @@ export default function HomePage() {
 
   return (
     <div className="space-y-5">
-      {/* Banner Carousel — BIRINCHI chiqadi */}
       {bannerLoading ? (
-        <SkeletonShimmer className="aspect-[21/9] w-full" />
+        <SkeletonShimmer className="aspect-[21/9] w-full animate-pulse" />
       ) : (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -14855,37 +14882,55 @@ export default function HomePage() {
         </motion.div>
       )}
 
-      {/* Search */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-      >
-        <Search size={17} className="text-slate-400" />
-        <input
-          value={searchValue}
-          onChange={(event) => setSearchValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") submitSearch();
-          }}
-          placeholder={format("Retsept qidirish...")}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-        />
-        <button
-          onClick={submitSearch}
-          className="rounded-2xl bg-[#DB2777] px-4 py-2 text-xs font-extrabold text-white active:scale-95 transition-transform"
+      {/* ✅ Qidiruv + live dropdown */}
+      <div className="relative">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.05 }}
+          className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
         >
-          {format("Qidirish")}
-        </button>
-      </motion.div>
+          <Search size={17} className="text-slate-400" />
+          <input
+            value={searchValue}
+            onChange={(event) => setSearchValue(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") submitSearch(); }}
+            placeholder={format("Retsept qidirish...")}
+            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+          />
+          <button
+            onClick={submitSearch}
+            className="rounded-2xl bg-[#DB2777] px-4 py-2 text-xs font-extrabold text-white active:scale-95"
+          >
+            {format("Qidirish")}
+          </button>
+        </motion.div>
 
-      {/* Premium CTA */}
+        {suggestions.length > 0 ? (
+          <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
+            {suggestions.map((recipe) => (
+              <button
+                key={recipe.id}
+                onClick={() => { setSelectedRecipe(recipe); setSearchValue(""); }}
+                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left active:bg-slate-50"
+              >
+                <span className="line-clamp-1 text-sm font-semibold text-slate-800">
+                  {format(recipe.title)}
+                </span>
+                <span className="shrink-0 text-[10px] font-bold text-slate-400">
+                  {recipe.cook_time_minutes ? `${recipe.cook_time_minutes} ${format("daqiqa")}` : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
       {!sessionLoading && !isPremium ? (
         <motion.button
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
+          transition={{ duration: 0.4, delay: 0.1 }}
           onClick={() => openModal("premium")}
           className="flex w-full items-center justify-between gap-3 rounded-3xl bg-slate-900 p-4 text-left shadow-md"
         >
@@ -14903,45 +14948,32 @@ export default function HomePage() {
         </motion.button>
       ) : null}
 
-      {/* Daily recipes */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <motion.h3
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.4, delay: 0.15 }}
-            className="font-display text-base font-extrabold text-slate-900"
-          >
+          <h3 className="font-display text-base font-extrabold text-slate-900">
             {format("Kunlik retseptlar")}
-          </motion.h3>
-          <button
-            onClick={() => setActiveTab("recipes")}
-            className="text-xs font-bold text-[#DB2777]"
-          >
+          </h3>
+          <button onClick={() => setActiveTab("recipes")} className="text-xs font-bold text-[#DB2777]">
             {format("Barchasi")}
           </button>
         </div>
         {recipesLoading ? (
           <div className="grid grid-cols-2 gap-3">
-            <SkeletonShimmer className="h-52" />
-            <SkeletonShimmer className="h-52" />
+            <SkeletonShimmer className="h-52 animate-pulse" />
+            <SkeletonShimmer className="h-52 animate-pulse" />
           </div>
         ) : dailyRecipes.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
             {format("Hozircha retseptlar yo'q")}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 items-stretch gap-3">
             {dailyRecipes.map((recipe, index) => (
               <motion.div
                 key={recipe.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.4,
-                  delay: 0.2 + index * 0.05, // STAGGER: har bir card 50ms kechikish
-                  ease: [0.25, 0.46, 0.45, 0.94],
-                }}
+                transition={{ duration: 0.4, delay: 0.2 + index * 0.05 }}
               >
                 <RecipeCard recipe={recipe} onOpen={setSelectedRecipe} />
               </motion.div>
@@ -14950,28 +14982,19 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* Daily lifehacks */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <motion.h3
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.4, delay: 0.25 }}
-            className="font-display text-base font-extrabold text-slate-900"
-          >
+          <h3 className="font-display text-base font-extrabold text-slate-900">
             {format("Kunlik lifehacklar")}
-          </motion.h3>
-          <button
-            onClick={() => setActiveTab("lifehacks")}
-            className="text-xs font-bold text-[#DB2777]"
-          >
+          </h3>
+          <button onClick={() => setActiveTab("lifehacks")} className="text-xs font-bold text-[#DB2777]">
             {format("Barchasi")}
           </button>
         </div>
         {lifehacksLoading ? (
           <div className="space-y-3">
-            <SkeletonShimmer className="h-24" />
-            <SkeletonShimmer className="h-24" />
+            <SkeletonShimmer className="h-24 animate-pulse" />
+            <SkeletonShimmer className="h-24 animate-pulse" />
           </div>
         ) : dailyLifehacks.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
@@ -14984,11 +15007,7 @@ export default function HomePage() {
                 key={lifehack.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.4,
-                  delay: 0.3 + index * 0.05,
-                  ease: [0.25, 0.46, 0.45, 0.94],
-                }}
+                transition={{ duration: 0.4, delay: 0.3 + index * 0.05 }}
               >
                 <LifehackCard lifehack={lifehack} />
               </motion.div>
@@ -15486,8 +15505,14 @@ export default function RecipesPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center p-8 text-center text-sm font-semibold text-slate-400">
-        {t("loading")}
+      <div className="space-y-4">
+        <div className="h-12 animate-pulse rounded-3xl bg-slate-200/70" />
+        <div className="h-12 animate-pulse rounded-3xl bg-slate-200/70" />
+        <div className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-52 animate-pulse rounded-3xl bg-slate-200/70" />
+          ))}
+        </div>
       </div>
     );
   }

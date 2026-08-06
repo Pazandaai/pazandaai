@@ -84,6 +84,10 @@ const STRINGS = {
   noLifehacks: "Maslahatlar topilmadi",
   lifehackEmptyFolder: "Bu papkada maslahatlar yo‘q",
   countSuffix: "ta",
+
+  filters: "Filtrlar",
+  filtersApply: "Ko'rsatish",
+  matchFind: "Mos taomni topish",
 } as const;
 
 export type I18nKey = keyof typeof STRINGS;

@@ -1,6 +1,9 @@
 import json
 import logging
 from datetime import datetime, timezone
+
+from html import escape
+
 from io import BytesIO
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -30,8 +33,10 @@ async def send_daily_recipe(bot) -> None:
                 pass
             continue
 
-        title = t(lang, recipe["title"]) if lang == "kyr" else recipe["title"]
-        desc = t(lang, recipe["description"]) if recipe.get("description") and lang == "kyr" else recipe.get("description", "")
+        raw_title = t(lang, recipe["title"]) if lang == "kyr" else recipe["title"]
+        raw_desc = t(lang, recipe["description"]) if recipe.get("description") and lang == "kyr" else recipe.get("description", "")
+        title = escape(str(raw_title))
+        desc = escape(str(raw_desc))
         cook_time = recipe.get("cook_time_minutes", 30)
 
         caption = (
