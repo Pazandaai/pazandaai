@@ -28,10 +28,10 @@ const API_BASE = (
     : "")
 ).replace(/\/$/, "");
 
-// Bo'sh joyli string'larni tozalaydi — " " endi bo'sh hisoblanadi
+// Strips extra quotes and whitespace from strings
 const clean = (v: unknown): string => {
-  if (typeof v === "string") return v.trim();
-  return v ? String(v) : "";
+  if (typeof v === "string") return v.replace(/^['"]|['"]$/g, "").trim();
+  return v ? String(v).trim() : "";
 };
 
 export function normalizeBanner(banner: any): BannerSlide[] {

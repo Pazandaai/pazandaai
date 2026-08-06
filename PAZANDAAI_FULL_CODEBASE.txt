@@ -8469,6 +8469,44 @@ export default async function handler(
 
 ---
 
+## 📄 webapp\api\banner.ts
+
+`typescript
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { supabaseFetch } from "./_lib/supabase.js";
+
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse,
+) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ ok: false, error: "Method not allowed" });
+  }
+
+  try {
+    const data = await supabaseFetch("GET", "app_settings", {
+      key: "eq.home_banner",
+      limit: 1,
+    });
+
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=30, stale-while-revalidate=60",
+    );
+
+    return res.status(200).json({ ok: true, value: data?.[0]?.value ?? null });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error?.message ?? "Server error",
+    });
+  }
+}
+
+`
+
+---
+
 ## 📄 webapp\api\upload.ts
 
 `typescript
@@ -8744,10 +8782,12 @@ export function requireEnv(name: string): string {
     BOT_TOKEN: b64("ODkyMDkzNzgyMzpBQUVlaTZFaHlCZ245ell3ZHZPLVJDSGliLWVudW9mRWkySQ=="),
     ADMIN_ID: "8544023815",
     SUPABASE_URL: "https://gxjhgllatevbpapmeaxo.supabase.co",
-    SUPABASE_SERVICE_ROLE_KEY: b64("c2JwX2I1MWQ2OWIyYjc0MmVhMWU1YjBiM2NiNjYzMWZlMGMyZWMxOTkyNmI="),
+    SUPABASE_SERVICE_ROLE_KEY: b64(
+      "ZXlKaGJHY2lPaUpJVXpJMU5pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SnBjM01pT2lKMzNYSmhZbXFpTENKeVpXWWlPaUpuZUhob2EyZHNiR0YwWlhaaWNHRXRiV0ZoZUdNaUxDSnliMnhlSWpvaWMyVnlkbWxqWlZfeWIyeGxJaXdpYVdGMElqb3hOemcxT1RJMk5UY3hMQ0psZUhBaU9qSXdNREVETVRBeE1UVXNmUS5kbWY2dnZkWE56OW5RN0t4a1pYZmw4RWJzVTdCdng3QXBEY1hLOFJnMEVN",
+    ),
     R2_ACCOUNT_ID: "ff9c53f6c95ae2549fbb8fa8f9f783b0",
-    R2_ACCESS_KEY_ID: "76b258b563f7395b49a0eb6db76b32f2",
-    R2_SECRET_ACCESS_KEY: "61876b8b866a1eb5df4e9ee5ab59e31821a315a37626e85e02bd996d2ca70117",
+    R2_ACCESS_KEY_ID: "c4c667a95f59015f206358dee4bdd447",
+    R2_SECRET_ACCESS_KEY: "8e49fec2a2f2f6a5a82374f60b48c3e3c9722a2cd81a16d0e389436615a3b778",
     R2_BUCKET_NAME: "pazanda-media",
     R2_PUBLIC_BASE_URL: "https://pub-28be6d5a9b754971820ec79ebb8239e9.r2.dev",
   };
@@ -9255,58 +9295,69 @@ export interface HomeBanner {
   subtitle?: string;
 }
 
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" &&
+  window.location.hostname.includes("localhost")
+    ? "https://pazandaai.vercel.app"
+    : "")
+).replace(/\/$/, "");
+
+// Bo'sh joyli string'larni tozalaydi — " " endi bo'sh hisoblanadi
+const clean = (v: unknown): string => {
+  if (typeof v === "string") return v.trim();
+  return v ? String(v) : "";
+};
+
 export function normalizeBanner(banner: any): BannerSlide[] {
   if (!banner) return [];
 
+  const mapItem = (item: any, idx: number): BannerSlide => ({
+    id: clean(item?.id) || `slide-${idx}`,
+    image_url: clean(item?.image_url),
+    title: clean(item?.title),
+    subtitle: clean(item?.subtitle),
+    link_url: clean(item?.link_url || item?.button_url),
+    link_text: clean(item?.link_text || item?.button_text),
+    active: item?.active !== false,
+  });
+
+  let items: BannerSlide[] = [];
+
   if (Array.isArray(banner)) {
-    return banner
-      .map((item, idx) => ({
-        id: item.id || `slide-${idx}`,
-        image_url: item.image_url || "",
-        title: item.title || "",
-        subtitle: item.subtitle || "",
-        link_url: item.link_url || item.button_url || "",
-        link_text: item.link_text || item.button_text || "",
-        active: item.active !== false,
-      }))
-      .filter((s) => s.active !== false);
-  }
-
-  if (typeof banner === "object") {
+    items = banner.map(mapItem);
+  } else if (typeof banner === "object") {
     if (Array.isArray(banner.slides)) {
-      return normalizeBanner(banner.slides);
-    }
-
-    if (banner.image_url || banner.title) {
-      return [
-        {
-          id: banner.id || "legacy",
-          image_url: banner.image_url ?? "",
-          title: banner.title ?? "",
-          subtitle: banner.subtitle ?? "",
-          link_url: banner.link_url || banner.button_url || "",
-          link_text: banner.link_text || banner.button_text || "",
-          active: banner.active !== false,
-        },
-      ].filter((s) => s.active !== false);
+      items = banner.slides.map(mapItem);
+    } else if (banner.image_url || banner.title) {
+      items = [mapItem(banner, 0)];
     }
   }
 
-  return [];
+  return items.filter((s) => s.active !== false && (s.image_url || s.title));
 }
 
 export async function fetchHomeBanner(): Promise<HomeBanner | null> {
-  if (!supabase) return null;
+  // 1) API orqali — VITE env va RLS'dan QAT'I NAZAR ishlaydi
+  try {
+    const res = await fetch(`${API_BASE}/api/banner`, { cache: "no-store" });
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json?.ok && json.value) return json.value as HomeBanner;
+    }
+  } catch {
+    // ignore
+  }
 
+  // 2) Fallback — Supabase anon
+  if (!supabase) return null;
   try {
     const { data, error } = await supabase
       .from("app_settings")
       .select("value")
       .eq("key", "home_banner")
       .maybeSingle();
-
     if (error) return null;
-
     return (data?.value as HomeBanner) ?? null;
   } catch {
     return null;
@@ -11393,6 +11444,8 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
   const { format } = useApp();
   const [index, setIndex] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
   const touchX = useRef<number | null>(null);
   const count = slides.length;
 
@@ -11400,7 +11453,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
     if (count <= 1) return;
     const id = setInterval(() => {
       setIndex((prev) => (prev + 1) % count);
-      setImageLoaded(false); // yangi slide uchun reset
+      setImageLoaded(false);
     }, 5000);
     return () => clearInterval(id);
   }, [count]);
@@ -11409,9 +11462,20 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
     if (index >= count) setIndex(0);
   }, [count, index]);
 
-  if (count === 0) return null;
+  const slide = count > 0 ? slides[Math.min(index, count - 1)] : null;
 
-  const slide = slides[Math.min(index, count - 1)];
+  useEffect(() => {
+    setImgError(false);
+  }, [slide?.id, slide?.image_url]);
+
+  useEffect(() => {
+    if (imgRef.current && imgRef.current.complete) {
+      setImageLoaded(true);
+    }
+  }, [slide?.image_url]);
+
+  if (!slide) return null;
+
   const linkUrl = slide.link_url || slide.button_url;
   const linkText = slide.link_text || slide.button_text || "Batafsil";
 
@@ -11436,24 +11500,26 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
       onTouchEnd={onTouchEnd}
     >
       <AnimatePresence mode="wait">
-        {slide.image_url ? (
+        {slide.image_url && !imgError ? (
           <motion.img
-            key={slide.id}
+            ref={imgRef}
+            key={slide.id || slide.image_url}
             src={slide.image_url}
             alt={format(slide.title || "Pazanda AI")}
-            // OPTIMIZATSIYA: eager loading + high priority
             loading="eager"
             {...({ fetchpriority: "high" } as any)}
             decoding="async"
             onLoad={() => setImageLoaded(true)}
-            initial={{ opacity: 0, scale: 1.05 }}
-            animate={{
-              opacity: imageLoaded ? 1 : 0,
-              scale: imageLoaded ? 1 : 1.05,
+            onError={() => {
+              console.error("[Banner] rasm yuklanmadi:", slide.image_url);
+              setImgError(true);
+              setImageLoaded(true);
             }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            initial={{ opacity: 0, scale: 1.03 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
             transition={{
-              duration: 0.5,
+              duration: 0.4,
               ease: [0.25, 0.46, 0.45, 0.94],
             }}
             className="absolute inset-0 h-full w-full object-cover"
@@ -11461,17 +11527,17 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
         ) : null}
       </AnimatePresence>
 
-      {/* Skeleton while image loading */}
-      {!imageLoaded && slide.image_url ? (
-        <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200" />
+      {/* Skeleton background while image loading */}
+      {!imageLoaded && slide.image_url && !imgError ? (
+        <div className="absolute inset-0 animate-pulse bg-slate-800/40" />
       ) : null}
 
       <div className="banner-overlay absolute inset-0" />
 
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
+        transition={{ duration: 0.4, delay: 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
         className="absolute inset-x-0 bottom-0 p-4"
       >
         <h2 className="font-display text-xl font-extrabold leading-6 text-white drop-shadow-sm">
@@ -11517,7 +11583,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
           <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/30 px-2.5 py-1 backdrop-blur">
             {slides.map((s, i) => (
               <motion.button
-                key={s.id}
+                key={s.id || i}
                 onClick={() => setIndex(i)}
                 aria-label={`Slayd ${i + 1}`}
                 animate={{
