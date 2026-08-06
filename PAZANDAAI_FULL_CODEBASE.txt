@@ -869,9 +869,11 @@ async def edit_callback(
 
 `python
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from html import escape
 from io import BytesIO
+from typing import Any
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -899,12 +901,28 @@ from app.texts.strings import t
 settings = get_settings()
 router = Router()
 
+_CARD_CACHE: dict[str, Any] = {"ts": 0, "value": None}
+
+
+async def get_payment_card() -> dict | None:
+    now = time.monotonic()
+    if _CARD_CACHE["value"] is not None and now - _CARD_CACHE["ts"] < 300:
+        return _CARD_CACHE["value"]
+    value = None
+    try:
+        value = await db.get_app_setting("payment_card")
+    except Exception:
+        value = None
+    _CARD_CACHE["ts"] = now
+    _CARD_CACHE["value"] = value
+    return value
+
 
 class PremiumStates(StatesGroup):
     waiting_screenshot = State()
 
 
-def _premium_text(lang: str) -> str:
+async def _premium_text(lang: str) -> str:
     price = f"{settings.PREMIUM_PRICE_UZS:,}".replace(",", " ")
 
     lines = [
@@ -913,33 +931,39 @@ def _premium_text(lang: str) -> str:
         t(lang, "premium_price", price=price),
     ]
 
-    if settings.PAYMENT_CARD_NUMBER:
+    card = await get_payment_card()
+    card_number = (card or {}).get("card_number") or settings.PAYMENT_CARD_NUMBER
+    card_holder = (card or {}).get("card_holder") or settings.PAYMENT_CARD_HOLDER
+
+    if card_number:
         lines.append(
-            t(lang, "premium_card", card=escape(settings.PAYMENT_CARD_NUMBER))
+            t(lang, "premium_card", card=escape(card_number))
         )
 
-    if settings.PAYMENT_CARD_HOLDER:
+    if card_holder:
         lines.append(
-            t(lang, "premium_card_holder", holder=escape(settings.PAYMENT_CARD_HOLDER))
+            t(lang, "premium_card_holder", holder=escape(card_holder))
         )
 
-    if not settings.PAYMENT_CARD_NUMBER and not settings.PAYMENT_CARD_HOLDER:
+    if not card_number and not card_holder:
         lines.append(t(lang, "premium_not_configured"))
 
     return "\n\n".join(lines)
 
 
 async def _show_premium_message(message: Message, lang: str) -> None:
+    text = await _premium_text(lang)
     await message.answer(
-        _premium_text(lang),
+        text,
         reply_markup=premium_kb(lang),
     )
 
 
 async def _show_premium_callback(callback: CallbackQuery, lang: str) -> None:
+    text = await _premium_text(lang)
     await edit_callback(
         callback,
-        _premium_text(lang),
+        text,
         premium_kb(lang),
     )
     await callback.answer()
@@ -2081,6 +2105,12 @@ class SupabaseDB:
             "recipes": recipes,
             "lifehacks": lifehacks,
         }
+
+    async def get_app_setting(self, key: str) -> Any | None:
+        data = await self._request(
+            "GET", "app_settings", params={"key": f"eq.{key}", "limit": 1}
+        )
+        return data[0].get("value") if data else None
 
     async def health_check(self) -> bool:
         await self._request(
@@ -8168,7 +8198,6 @@ export default async function handler(
           limit: 50,
         };
         if (search) {
-          // ✅ TUZATISH: telegram_id.eq faqat RAQAM bo'lsa qo'shiladi
           const conds = [
             `username.ilike.*${search}*`,
             `first_name.ilike.*${search}*`,
@@ -8234,8 +8263,28 @@ export default async function handler(
       }
 
       // =====================
-      // TO'LOVLAR
+      // TO'LOVLAR & PAYMENT CARD
       // =====================
+      case "get_payment_card": {
+        const data = await supabaseFetch("GET", "app_settings", { key: "eq.payment_card", limit: 1 });
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+
+      case "save_payment_card": {
+        const value = {
+          card_number: String(payload?.card_number ?? "").trim(),
+          card_holder: String(payload?.card_holder ?? "").trim(),
+        };
+        const data = await supabaseFetch(
+          "POST",
+          "app_settings",
+          { on_conflict: "key" },
+          { key: "payment_card", value },
+          "resolution=merge-duplicates,return=representation",
+        );
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+
       case "list_payments": {
         const status = payload?.status ?? "pending";
         const data = await supabaseFetch("GET", "premium_requests", {
@@ -8351,7 +8400,6 @@ export default async function handler(
         return res.status(200).json({ ok: true, data });
       }
 
-      // ✅ YANGI: to'liq retsept (tahrirlash uchun)
       case "get_recipe": {
         const id = payload?.id;
         if (!id) return res.status(400).json({ ok: false, error: "id required" });
@@ -8394,7 +8442,6 @@ export default async function handler(
         return res.status(200).json({ ok: true, data });
       }
 
-      // ✅ YANGI: to'liq lifehack (tahrirlash uchun)
       case "get_lifehack": {
         const id = payload?.id;
         if (!id) return res.status(400).json({ ok: false, error: "id required" });
@@ -8524,7 +8571,7 @@ export default async function handler(
 
     res.setHeader(
       "Cache-Control",
-      "public, s-maxage=60, stale-while-revalidate=120",
+      "public, s-maxage=300, stale-while-revalidate=600",
     );
 
     return res.status(200).json({ ok: true, data: data ?? [] });
@@ -8533,6 +8580,27 @@ export default async function handler(
       ok: false,
       error: error?.message ?? "Server error",
     });
+  }
+}
+
+`
+
+---
+
+## 📄 webapp/api/payment-card.ts
+
+`typescript
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { supabaseFetch } from "./_lib/supabase.js";
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  try {
+    const data = await supabaseFetch("GET", "app_settings", { key: "eq.payment_card", limit: 1 });
+    res.setHeader("Cache-Control", "public, s-maxage=60");
+    return res.status(200).json({ ok: true, value: data?.[0]?.value ?? null });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error?.message ?? "Server error" });
   }
 }
 
@@ -8563,7 +8631,7 @@ export default async function handler(
 
     res.setHeader(
       "Cache-Control",
-      "public, s-maxage=60, stale-while-revalidate=120",
+      "public, s-maxage=300, stale-while-revalidate=600",
     );
 
     return res.status(200).json({ ok: true, data: data ?? [] });
@@ -9297,15 +9365,15 @@ export default function App() {
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
 .glass-dark {
-  background: rgba(15, 23, 42, 0.78);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(15, 23, 42, 0.86);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
 
 .safe-top {
@@ -9470,6 +9538,7 @@ export async function fetchHomeBanner(): Promise<HomeBanner | null> {
 
 `typescript
 import { supabase } from "../lib/supabase";
+import { cacheGet, cacheSet } from "../lib/cache";
 import type { Lifehack } from "../types/lifehack";
 
 const API_BASE = (
@@ -9526,40 +9595,48 @@ function normalizeRow(row: any): Lifehack {
 }
 
 export async function fetchLifehacks(): Promise<Lifehack[]> {
-  // 1) API endpoint orqali (VITE env & RLS dan xoli)
+  const cachedRows = cacheGet<any[]>("lifehacks", 5 * 60 * 1000);
+  if (cachedRows && cachedRows.length) {
+    return cachedRows.map(normalizeRow);
+  }
+
+  let rows: any[] = [];
+
   try {
-    const res = await fetch(`${API_BASE}/api/lifehacks`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/api/lifehacks`);
     if (res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
-        return json.data.map(normalizeRow);
+        rows = json.data;
       }
     }
   } catch {
     // ignore
   }
 
-  // 2) Fallback — Client Supabase
-  if (!supabase) {
-    return MOCK_LIFEHACKS;
-  }
+  if (!rows.length && supabase) {
+    try {
+      const { data } = await supabase
+        .from("lifehacks")
+        .select("*")
+        .eq("is_published", true)
+        .order("id", { ascending: true })
+        .limit(500);
 
-  try {
-    const { data, error } = await supabase
-      .from("lifehacks")
-      .select("*")
-      .eq("is_published", true)
-      .order("id", { ascending: true })
-      .limit(500);
-
-    if (error || !data || data.length === 0) {
-      return MOCK_LIFEHACKS;
+      if (data && data.length > 0) {
+        rows = data;
+      }
+    } catch {
+      // ignore
     }
-
-    return data.map(normalizeRow);
-  } catch {
-    return MOCK_LIFEHACKS;
   }
+
+  if (rows.length > 0) {
+    cacheSet("lifehacks", rows);
+    return rows.map(normalizeRow);
+  }
+
+  return MOCK_LIFEHACKS;
 }
 
 export function getLifehackCategories(lifehacks: Lifehack[]): string[] {
@@ -9583,6 +9660,7 @@ export function getLifehackCategories(lifehacks: Lifehack[]): string[] {
 `typescript
 import { supabase } from "../lib/supabase";
 import { parseIngredientEntry } from "../lib/recipe-utils";
+import { cacheGet, cacheSet } from "../lib/cache";
 import type { Recipe, RecipeStep } from "../types";
 
 const API_BASE = (
@@ -9628,7 +9706,6 @@ function normalizeRecipe(row: any): Recipe {
     cook_time_minutes: row.cook_time_minutes ?? null,
     difficulty: row.difficulty ?? null,
     servings: row.servings ?? 4,
-    // ✅ YANGI: parser singan \n larni bo'ladi, quantity/unit ajratadi
     ingredients: parseJsonArray(row.ingredients).flatMap((raw) =>
       parseIngredientEntry(raw),
     ),
@@ -9637,30 +9714,47 @@ function normalizeRecipe(row: any): Recipe {
 }
 
 export async function fetchRecipes(): Promise<Recipe[]> {
+  const cachedRows = cacheGet<any[]>("recipes", 5 * 60 * 1000);
+  if (cachedRows && cachedRows.length) {
+    return cachedRows.map(normalizeRecipe);
+  }
+
+  let rows: any[] = [];
+
   try {
-    const res = await fetch(`${API_BASE}/api/recipes`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/api/recipes`);
     if (res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
-        return json.data.map(normalizeRecipe);
+        rows = json.data;
       }
     }
   } catch {
     // ignore
   }
-  if (!supabase) return [];
-  try {
-    const { data, error } = await supabase
-      .from("recipes")
-      .select("*")
-      .eq("is_published", true)
-      .order("id", { ascending: true })
-      .limit(500);
-    if (error || !data || data.length === 0) return [];
-    return data.map(normalizeRecipe);
-  } catch {
-    return [];
+
+  if (!rows.length && supabase) {
+    try {
+      const { data } = await supabase
+        .from("recipes")
+        .select("*")
+        .eq("is_published", true)
+        .order("id", { ascending: true })
+        .limit(500);
+      if (data && data.length > 0) {
+        rows = data;
+      }
+    } catch {
+      // ignore
+    }
   }
+
+  if (rows.length > 0) {
+    cacheSet("recipes", rows);
+    return rows.map(normalizeRecipe);
+  }
+
+  return [];
 }
 
 `
@@ -9708,8 +9802,7 @@ export default function BottomNav() {
       className="safe-bottom fixed inset-x-0 bottom-0 z-50"
     >
       <div className="mx-auto w-full max-w-md px-4 pb-4">
-        {/* ✅ bg-white/90 olib tashlandi — endi glass (shaffof + yengil blur) */}
-        <div className="glass rounded-3xl border border-white/40 shadow-[0_18px_40px_rgba(15,23,42,0.10)]">
+        <div className="rounded-3xl border border-white/50 bg-white/85 shadow-[0_18px_40px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-150">
           <div className="grid grid-cols-4 px-2 py-2">
             {TABS.map((tab) => {
               const active = activeTab === tab.id;
@@ -10280,6 +10373,42 @@ function UsersAdmin() {
   );
 }
 
+function CardSettings() {
+  const { format } = useApp();
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardHolder, setCardHolder] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminRequest("get_payment_card")
+      .then((res) => {
+        const v = res.data?.value;
+        if (v) {
+          setCardNumber(v.card_number ?? "");
+          setCardHolder(v.card_holder ?? "");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    await adminRequest("save_payment_card", { card_number: cardNumber, card_holder: cardHolder });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  return (
+    <div className="space-y-2 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+      <p className="text-xs font-extrabold text-slate-700">{format("💳 To'lov kartasi (bot va ilovada ko'rinadi)")}</p>
+      <input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} placeholder="8600 0000 0000 0000" className={inputClass} />
+      <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Karta egasi ismi" className={inputClass} />
+      <button onClick={save} className="h-10 w-full rounded-2xl bg-[#DB2777] text-xs font-extrabold text-white">
+        {saved ? format("✅ Saqlandi") : format("Saqlash")}
+      </button>
+    </div>
+  );
+}
+
 // =====================
 // PAYMENTS ADMIN
 // =====================
@@ -10311,6 +10440,7 @@ function PaymentsAdmin() {
 
   return (
     <div className="space-y-3">
+      <CardSettings />
       {loading ? (
         <div className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />
       ) : payments.length === 0 ? (
@@ -11704,6 +11834,7 @@ import { hapticNotification } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Lifehack } from "../../types/lifehack";
 import RichText from "../ui/RichText";
+import ZoomableImage from "../ui/ZoomableImage";
 
 export default function LifehackCard({ lifehack }: { lifehack: Lifehack }) {
   const { format, t } = useApp();
@@ -11765,8 +11896,8 @@ export default function LifehackCard({ lifehack }: { lifehack: Lifehack }) {
             className="overflow-hidden"
           >
             {lifehack.image_url ? (
-              <div className="mt-3 overflow-hidden rounded-2xl">
-                <img src={lifehack.image_url} alt={format(lifehack.title)} loading="lazy" className="aspect-[16/9] w-full object-cover" />
+              <div className="mt-3">
+                <ZoomableImage src={lifehack.image_url} alt={format(lifehack.title)} className="aspect-[16/9] rounded-2xl" />
               </div>
             ) : null}
             <div className="mt-3">
@@ -11829,6 +11960,64 @@ export default function LifehackFolderCard({
         {count} {t("countSuffix")}
       </p>
     </motion.button>
+  );
+}
+
+`
+
+---
+
+## 📄 webapp/src/components/lifehacks/LifehackModal.tsx
+
+`typescript
+import { Copy } from "lucide-react";
+import { useState } from "react";
+import { useApp } from "../../context/AppContext";
+import { hapticNotification } from "../../lib/telegram";
+import type { Lifehack } from "../../types/lifehack";
+import ModalShell from "../ui/ModalShell";
+import RichText from "../ui/RichText";
+import ZoomableImage from "../ui/ZoomableImage";
+
+interface LifehackModalProps {
+  lifehack: Lifehack | null;
+  onClose: () => void;
+}
+
+export default function LifehackModal({ lifehack, onClose }: LifehackModalProps) {
+  const { format, t } = useApp();
+  const [copied, setCopied] = useState(false);
+
+  const copyContent = async () => {
+    if (!lifehack) return;
+    try {
+      await navigator.clipboard.writeText(`${format(lifehack.title)}\n${format(lifehack.content)}`);
+      setCopied(true);
+      hapticNotification("success");
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+
+  return (
+    <ModalShell open={Boolean(lifehack)} title={lifehack ? format(lifehack.title) : ""} onClose={onClose}>
+      {lifehack ? (
+        <div className="space-y-4">
+          {lifehack.category ? (
+            <span className="inline-block rounded-full bg-[#DB2777]/10 px-2.5 py-1 text-[10px] font-bold text-[#DB2777]">
+              {format(lifehack.category)}
+            </span>
+          ) : null}
+          {lifehack.image_url ? (
+            <ZoomableImage src={lifehack.image_url} alt={format(lifehack.title)} className="aspect-[16/9] rounded-2xl" />
+          ) : null}
+          <RichText text={format(lifehack.content)} />
+          <button onClick={copyContent} className="flex h-10 items-center gap-2 rounded-2xl bg-slate-900 px-4 text-xs font-bold text-white">
+            <Copy size={14} />
+            {copied ? t("copied") : t("copy")}
+          </button>
+        </div>
+      ) : null}
+    </ModalShell>
   );
 }
 
@@ -11974,7 +12163,7 @@ import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../../context/AppContext";
-import { uploadImage } from "../../lib/api";
+import { API_BASE, uploadImage } from "../../lib/api";
 import { hapticNotification } from "../../lib/telegram";
 import ModalShell from "../ui/ModalShell";
 
@@ -11989,6 +12178,14 @@ function PremiumInner() {
   const [done, setDone] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [card, setCard] = useState<{ card_number?: string; card_holder?: string } | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/payment-card`)
+      .then((r) => r.json())
+      .then((j) => { if (j?.ok && j.value) setCard(j.value); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -12052,6 +12249,14 @@ function PremiumInner() {
             )}
           </p>
         </div>
+
+        {card?.card_number ? (
+          <div className="rounded-3xl bg-slate-900 p-4 text-white shadow-md">
+            <p className="text-[10px] font-bold text-slate-400">{format("To'lov kartasi")}</p>
+            <p className="mt-1 font-mono text-base font-extrabold tracking-wider">{card.card_number}</p>
+            {card.card_holder ? <p className="mt-0.5 text-xs text-slate-300">{card.card_holder}</p> : null}
+          </div>
+        ) : null}
 
         <input
           ref={inputRef}
@@ -12574,6 +12779,7 @@ import { hapticImpact, hapticNotification } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Recipe } from "../../types";
 import ModalShell from "../ui/ModalShell";
+import ZoomableImage from "../ui/ZoomableImage";
 
 interface RecipeModalProps {
   recipe: Recipe | null;
@@ -12596,14 +12802,12 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
   const [checkedIngredients, setCheckedIngredients] = useState<Set<string>>(
     new Set(),
   );
-  const [zoomed, setZoomed] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const isFavorite = recipe ? favorites.includes(recipe.id) : false;
 
   useEffect(() => {
     setCheckedIngredients(new Set());
-    setZoomed(false);
     setCopied(false);
 
     if (recipe?.servings && PORTION_OPTIONS.includes(recipe.servings)) {
@@ -12695,19 +12899,11 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
     <ModalShell open={Boolean(recipe)} title={format(recipe.title)} onClose={onClose}>
       <div className="space-y-5">
         {recipe.image_url ? (
-          <div
-            onClick={() => setZoomed((prev) => !prev)}
-            className="cursor-pointer overflow-hidden rounded-3xl bg-slate-100"
-          >
-            <img
-              src={recipe.image_url}
-              alt={format(recipe.title)}
-              className={cn(
-                "w-full transition-all duration-300",
-                zoomed ? "max-h-[70vh] object-contain" : "h-52 object-cover",
-              )}
-            />
-          </div>
+          <ZoomableImage
+            src={recipe.image_url}
+            alt={format(recipe.title)}
+            className="h-52 rounded-3xl bg-slate-100"
+          />
         ) : null}
 
         {recipe.description ? (
@@ -13094,6 +13290,121 @@ export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPan
 
 ---
 
+## 📄 webapp/src/components/search/GlobalSearch.tsx
+
+`typescript
+import { ChefHat, Lightbulb, Search } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { useApp } from "../../context/AppContext";
+import type { Recipe } from "../../types";
+import type { Lifehack } from "../../types/lifehack";
+
+interface GlobalSearchProps {
+  recipes: Recipe[];
+  lifehacks: Lifehack[];
+  onOpenRecipe: (r: Recipe) => void;
+  onOpenLifehack: (l: Lifehack) => void;
+  onSubmit?: (q: string) => void;
+}
+
+export default function GlobalSearch({
+  recipes, lifehacks, onOpenRecipe, onOpenLifehack, onSubmit,
+}: GlobalSearchProps) {
+  const { format } = useApp();
+  const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const q = query.trim().toLowerCase();
+
+  const recipeHits = useMemo(
+    () => (q.length >= 2
+      ? recipes
+          .filter((r) => [r.title, r.description, r.category].filter(Boolean).join(" ").toLowerCase().includes(q))
+          .slice(0, 6)
+      : []),
+    [q, recipes],
+  );
+
+  const lifehackHits = useMemo(
+    () => (q.length >= 2
+      ? lifehacks
+          .filter((l) => [l.title, l.category].filter(Boolean).join(" ").toLowerCase().includes(q))
+          .slice(0, 4)
+      : []),
+    [q, lifehacks],
+  );
+
+  const showDrop = focused && q.length >= 2 && (recipeHits.length > 0 || lifehackHits.length > 0);
+
+  // ✅ Klaviatura ochilganda input ko'rinishda qoladi
+  const onFocus = () => {
+    setFocused(true);
+    setTimeout(() => inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
+  };
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm focus-within:border-[#DB2777]/40">
+        <Search size={17} className="text-slate-400" />
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={onFocus}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          onKeyDown={(e) => { if (e.key === "Enter" && onSubmit) onSubmit(query.trim()); }}
+          placeholder={format("Retsept yoki maslahat qidirish...")}
+          className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+        />
+      </div>
+
+      {showDrop ? (
+        <div className="absolute inset-x-0 top-full z-40 mt-2 max-h-[55vh] overflow-y-auto rounded-3xl border border-slate-100 bg-white shadow-2xl">
+          {recipeHits.map((r) => (
+            <button
+              key={`r-${r.id}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onOpenRecipe(r); setFocused(false); }}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-slate-50"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-pink-50 text-[#DB2777]">
+                <ChefHat size={16} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-slate-900">{format(r.title)}</span>
+                <span className="block text-[11px] text-slate-400">
+                  {format(r.category ?? "Retsept")}{r.cook_time_minutes ? ` • ${r.cook_time_minutes} daqiqa` : ""}
+                </span>
+              </span>
+            </button>
+          ))}
+          {lifehackHits.map((l) => (
+            <button
+              key={`l-${l.id}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onOpenLifehack(l); setFocused(false); }}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-slate-50"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
+                <Lightbulb size={16} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-slate-900">{format(l.title)}</span>
+                <span className="block text-[11px] text-slate-400">{format(l.category ?? "Lifehack")}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+`
+
+---
+
 ## 📄 webapp/src/components/ui/ModalShell.tsx
 
 `typescript
@@ -13194,6 +13505,105 @@ export default function RichText({ text }: { text: string }) {
         </p>
       ))}
     </div>
+  );
+}
+
+`
+
+---
+
+## 📄 webapp/src/components/ui/ZoomableImage.tsx
+
+`typescript
+import { X } from "lucide-react";
+import { useRef, useState } from "react";
+
+interface ZoomableImageProps {
+  src: string;
+  alt?: string;
+  className?: string;
+}
+
+export default function ZoomableImage({ src, alt, className = "" }: ZoomableImageProps) {
+  const [open, setOpen] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const lastTouch = useRef<{ x: number; y: number } | null>(null);
+  const pinchDist = useRef<number | null>(null);
+  const startScale = useRef(1);
+
+  const openViewer = () => { setOpen(true); setScale(1); setPos({ x: 0, y: 0 }); };
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      pinchDist.current = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      startScale.current = scale;
+    } else if (e.touches.length === 1) {
+      lastTouch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchDist.current) {
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      setScale(Math.min(4, Math.max(1, startScale.current * (d / pinchDist.current))));
+    } else if (e.touches.length === 1 && lastTouch.current && scale > 1) {
+      const t = e.touches[0];
+      const last = lastTouch.current;
+      setPos((p) => ({ x: p.x + t.clientX - last.x, y: p.y + t.clientY - last.y }));
+      lastTouch.current = { x: t.clientX, y: t.clientY };
+    }
+  };
+
+  const onTouchEnd = () => {
+    pinchDist.current = null;
+    lastTouch.current = null;
+    if (scale <= 1) setPos({ x: 0, y: 0 });
+  };
+
+  return (
+    <>
+      <button type="button" onClick={openViewer} className={`block w-full overflow-hidden ${className}`}>
+        <img src={src} alt={alt} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+      </button>
+      {open ? (
+        <div
+          className="fixed inset-0 z-[120] bg-black/95"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <button
+            onClick={() => setOpen(false)}
+            className="absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white"
+          >
+            <X size={20} />
+          </button>
+          <div className="flex h-full w-full items-center justify-center overflow-hidden">
+            <img
+              src={src}
+              alt={alt}
+              draggable={false}
+              onClick={() => { setScale((s) => (s > 1 ? 1 : 2.5)); setPos({ x: 0, y: 0 }); }}
+              style={{
+                transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
+                transition: pinchDist.current ? "none" : "transform 0.25s ease",
+              }}
+              className="max-h-full max-w-full select-none object-contain"
+            />
+          </div>
+          <p className="absolute bottom-4 w-full text-center text-[11px] font-semibold text-white/60">
+            Bosing — yaqinlashtirish • Ikki barmoq — pinch • ✕ — yopish
+          </p>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -13746,7 +14156,7 @@ export function useSession() {
 import { compressImage } from "./compress";
 import { getInitData } from "./telegram";
 
-const API_BASE = (
+export const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
   (typeof window !== "undefined" && window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"
@@ -13896,6 +14306,35 @@ export async function adminRequest(
     action,
     payload,
   });
+}
+
+`
+
+---
+
+## 📄 webapp/src/lib/cache.ts
+
+`typescript
+const PREFIX = "pazanda_cache_";
+
+export function cacheGet<T>(key: string, ttlMs: number): T | null {
+  try {
+    const raw = sessionStorage.getItem(PREFIX + key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ts || Date.now() - parsed.ts > ttlMs) return null;
+    return parsed.data as T;
+  } catch {
+    return null;
+  }
+}
+
+export function cacheSet(key: string, data: unknown): void {
+  try {
+    sessionStorage.setItem(PREFIX + key, JSON.stringify({ ts: Date.now(), data }));
+  } catch {
+    // ignore
+  }
 }
 
 `
@@ -15037,7 +15476,6 @@ export function makeId(): string {
 ## 📄 webapp/src/pages/HomePage.tsx
 
 `typescript
-import { Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -15050,8 +15488,10 @@ import { fetchLifehacks } from "../api/lifehacks";
 import { fetchRecipes } from "../api/recipes";
 import BannerCarousel from "../components/home/BannerCarousel";
 import LifehackCard from "../components/lifehacks/LifehackCard";
+import LifehackModal from "../components/lifehacks/LifehackModal";
 import RecipeCard from "../components/recipes/RecipeCard";
 import RecipeModal from "../components/recipes/RecipeModal";
+import GlobalSearch from "../components/search/GlobalSearch";
 import { useApp } from "../context/AppContext";
 import { useSession } from "../hooks/useSession";
 import type { Recipe } from "../types";
@@ -15089,8 +15529,8 @@ export default function HomePage() {
   const [recipesLoading, setRecipesLoading] = useState(true);
   const [lifehacks, setLifehacks] = useState<Lifehack[]>([]);
   const [lifehacksLoading, setLifehacksLoading] = useState(true);
-  const [searchValue, setSearchValue] = useState("");
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [selectedLifehack, setSelectedLifehack] = useState<Lifehack | null>(null);
 
   useEffect(() => {
     fetchHomeBanner()
@@ -15119,17 +15559,9 @@ export default function HomePage() {
     [lifehacks, todayKey],
   );
 
-  // ✅ LIVE qidiruv takliflari
-  const suggestions = useMemo(() => {
-    const q = searchValue.trim().toLowerCase();
-    if (q.length < 2) return [];
-    return recipes
-      .filter((r) => r.title.toLowerCase().includes(q))
-      .slice(0, 5);
-  }, [searchValue, recipes]);
-
-  const submitSearch = () => {
-    setRecipesSearchQuery(searchValue.trim());
+  const submitSearch = (q: string) => {
+    if (!q) return;
+    setRecipesSearchQuery(q);
     setActiveTab("recipes");
   };
 
@@ -15147,49 +15579,14 @@ export default function HomePage() {
         </motion.div>
       )}
 
-      {/* ✅ Qidiruv + live dropdown */}
-      <div className="relative">
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.05 }}
-          className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-        >
-          <Search size={17} className="text-slate-400" />
-          <input
-            value={searchValue}
-            onChange={(event) => setSearchValue(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Enter") submitSearch(); }}
-            placeholder={format("Retsept qidirish...")}
-            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-          />
-          <button
-            onClick={submitSearch}
-            className="rounded-2xl bg-[#DB2777] px-4 py-2 text-xs font-extrabold text-white active:scale-95"
-          >
-            {format("Qidirish")}
-          </button>
-        </motion.div>
-
-        {suggestions.length > 0 ? (
-          <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
-            {suggestions.map((recipe) => (
-              <button
-                key={recipe.id}
-                onClick={() => { setSelectedRecipe(recipe); setSearchValue(""); }}
-                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left active:bg-slate-50"
-              >
-                <span className="line-clamp-1 text-sm font-semibold text-slate-800">
-                  {format(recipe.title)}
-                </span>
-                <span className="shrink-0 text-[10px] font-bold text-slate-400">
-                  {recipe.cook_time_minutes ? `${recipe.cook_time_minutes} ${format("daqiqa")}` : ""}
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+      {/* ✅ Google-uslub Live Qidiruv */}
+      <GlobalSearch
+        recipes={recipes}
+        lifehacks={lifehacks}
+        onOpenRecipe={setSelectedRecipe}
+        onOpenLifehack={setSelectedLifehack}
+        onSubmit={submitSearch}
+      />
 
       {!sessionLoading && !isPremium ? (
         <motion.button
@@ -15282,6 +15679,7 @@ export default function HomePage() {
       </section>
 
       <RecipeModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} />
+      <LifehackModal lifehack={selectedLifehack} onClose={() => setSelectedLifehack(null)} />
     </div>
   );
 }
@@ -15593,6 +15991,7 @@ import type { DifficultyKey, Recipe } from "../types";
 export default function RecipesPage() {
   const {
     t,
+    format,
     recipesSearchQuery,
     setRecipesSearchQuery,
   } = useApp();
@@ -15721,18 +16120,37 @@ export default function RecipesPage() {
       />
 
       {mode === "catalog" ? (
-        filteredRecipes.length === 0 ? (
+        query.trim().length >= 2 ? (
+          <div className="space-y-2">
+            {filteredRecipes.slice(0, 10).map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setSelectedRecipe(r)}
+                className="flex w-full items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 text-left shadow-sm active:bg-slate-50"
+              >
+                <span className="text-lg">🍳</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold text-slate-900">{format(r.title)}</span>
+                  <span className="block text-[11px] text-slate-400">
+                    {format(r.category ?? "")}{r.cook_time_minutes ? ` • ${r.cook_time_minutes} daqiqa` : ""}
+                  </span>
+                </span>
+              </button>
+            ))}
+            {filteredRecipes.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+                {t("noRecipes")}
+              </div>
+            ) : null}
+          </div>
+        ) : filteredRecipes.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
             {t("noRecipes")}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 items-stretch gap-3">
             {filteredRecipes.map((recipe) => (
-              <RecipeCard
-                key={recipe.id}
-                recipe={recipe}
-                onOpen={setSelectedRecipe}
-              />
+              <RecipeCard key={recipe.id} recipe={recipe} onOpen={setSelectedRecipe} />
             ))}
           </div>
         )

@@ -386,8 +386,25 @@ export default async function handler(
       }
 
       // =====================
-      // BANNER
+      // BANNER & CATEGORY IMAGES
       // =====================
+      case "get_category_images": {
+        const data = await supabaseFetch("GET", "app_settings", { key: "eq.category_images", limit: 1 });
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+
+      case "save_category_images": {
+        const value = payload?.value ?? {};
+        const data = await supabaseFetch(
+          "POST",
+          "app_settings",
+          { on_conflict: "key" },
+          { key: "category_images", value },
+          "resolution=merge-duplicates,return=representation",
+        );
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+
       case "get_banner": {
         const data = await supabaseFetch("GET", "app_settings", {
           key: "eq.home_banner",

@@ -81,7 +81,7 @@ function AdminInner() {
   const isUserAdmin = isAdmin || user.id === 8544023815;
 
   const [tab, setTab] = useState<
-    "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks"
+    "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks" | "catimg"
   >("stats");
 
   return (
@@ -110,6 +110,7 @@ function AdminInner() {
             { id: "broadcast", label: "📣 Broadcast" },
             { id: "recipes", label: "🍳 Retseptlar" },
             { id: "lifehacks", label: "💡 Lifehacklar" },
+            { id: "catimg", label: "📁 Kategoriya rasmlari" },
             { id: "banner", label: "🖼 Banner" },
           ].map((item) => (
             <button
@@ -144,6 +145,7 @@ function AdminInner() {
               {tab === "broadcast" ? <BroadcastAdmin /> : null}
               {tab === "recipes" ? <RecipesAdmin /> : null}
               {tab === "lifehacks" ? <LifehacksAdmin /> : null}
+              {tab === "catimg" ? <CategoryImagesAdmin /> : null}
               {tab === "banner" ? <BannerAdmin /> : null}
             </>
           )}
@@ -1456,6 +1458,51 @@ function LifehacksAdmin() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function CategoryImagesAdmin() {
+  const { format } = useApp();
+  const [images, setImages] = useState<Record<string, string>>({});
+  const [categories, setCategories] = useState<string[]>([]);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminRequest("get_category_images")
+      .then((r) => setImages(r.data?.value ?? {}))
+      .catch(() => {});
+    adminRequest("list_recipes")
+      .then((r) => {
+        const cats = Array.from(new Set((r.data ?? []).map((x: any) => x.category).filter(Boolean)));
+        setCategories(cats as string[]);
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    await adminRequest("save_category_images", { value: images });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-semibold text-slate-500">
+        {format("Har bir kategoriya (papka) uchun ixtiyoriy rasm yuklang. Rasm yo'q bo'lsa emoji ko'rinadi.")}
+      </p>
+      {categories.map((cat) => (
+        <div key={cat} className="space-y-2 rounded-3xl border border-slate-100 bg-white p-3 shadow-sm">
+          <p className="text-sm font-bold text-slate-900">{format(cat)}</p>
+          <ImageUploader
+            value={images[cat] ?? ""}
+            onChange={(url) => setImages((prev) => ({ ...prev, [cat]: url }))}
+          />
+        </div>
+      ))}
+      <button onClick={save} className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white">
+        {saved ? format("✅ Saqlandi") : format("Saqlash")}
+      </button>
     </div>
   );
 }

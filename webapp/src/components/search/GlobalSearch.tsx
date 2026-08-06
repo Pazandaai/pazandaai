@@ -1,6 +1,7 @@
 import { ChefHat, Lightbulb, Search } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { fuzzyFilter } from "../../lib/search";
 import type { Recipe } from "../../types";
 import type { Lifehack } from "../../types/lifehack";
 
@@ -10,46 +11,41 @@ interface GlobalSearchProps {
   onOpenRecipe: (r: Recipe) => void;
   onOpenLifehack: (l: Lifehack) => void;
   onSubmit?: (q: string) => void;
+  placeholder?: string;
 }
 
 export default function GlobalSearch({
-  recipes, lifehacks, onOpenRecipe, onOpenLifehack, onSubmit,
+  recipes, lifehacks, onOpenRecipe, onOpenLifehack, onSubmit, placeholder,
 }: GlobalSearchProps) {
   const { format } = useApp();
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const q = query.trim().toLowerCase();
+  const q = query.trim();
 
   const recipeHits = useMemo(
     () => (q.length >= 2
-      ? recipes
-          .filter((r) => [r.title, r.description, r.category].filter(Boolean).join(" ").toLowerCase().includes(q))
-          .slice(0, 6)
+      ? fuzzyFilter(recipes, q, (r) => [r.title, r.category, r.description].filter(Boolean).join(" ")).slice(0, 6)
       : []),
     [q, recipes],
   );
-
   const lifehackHits = useMemo(
     () => (q.length >= 2
-      ? lifehacks
-          .filter((l) => [l.title, l.category].filter(Boolean).join(" ").toLowerCase().includes(q))
-          .slice(0, 4)
+      ? fuzzyFilter(lifehacks, q, (l) => [l.title, l.category].filter(Boolean).join(" ")).slice(0, 3)
       : []),
     [q, lifehacks],
   );
 
   const showDrop = focused && q.length >= 2 && (recipeHits.length > 0 || lifehackHits.length > 0);
 
-  // ✅ Klaviatura ochilganda input ko'rinishda qoladi
   const onFocus = () => {
     setFocused(true);
     setTimeout(() => inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
   };
 
   return (
-    <div className="relative">
+    <div className="relative z-40">
       <div className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm focus-within:border-[#DB2777]/40">
         <Search size={17} className="text-slate-400" />
         <input
@@ -58,14 +54,15 @@ export default function GlobalSearch({
           onChange={(e) => setQuery(e.target.value)}
           onFocus={onFocus}
           onBlur={() => setTimeout(() => setFocused(false), 150)}
-          onKeyDown={(e) => { if (e.key === "Enter" && onSubmit) onSubmit(query.trim()); }}
-          placeholder={format("Retsept yoki maslahat qidirish...")}
+          onKeyDown={(e) => { if (e.key === "Enter" && onSubmit) onSubmit(q); }}
+          placeholder={placeholder ?? format("Retsept yoki maslahat qidirish...")}
           className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
         />
       </div>
 
+      {/* ✅ Natijalar — search bar TAGIDA */}
       {showDrop ? (
-        <div className="absolute inset-x-0 top-full z-40 mt-2 max-h-[55vh] overflow-y-auto rounded-3xl border border-slate-100 bg-white shadow-2xl">
+        <div className="absolute inset-x-0 top-full mt-2 max-h-[55vh] overflow-y-auto rounded-3xl border border-slate-100 bg-white shadow-2xl">
           {recipeHits.map((r) => (
             <button
               key={`r-${r.id}`}
