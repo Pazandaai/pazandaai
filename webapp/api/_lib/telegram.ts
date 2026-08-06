@@ -11,7 +11,8 @@ export interface TelegramUser {
 export function parseInitDataUser(initData: string): TelegramUser | null {
   try {
     if (!initData) return null;
-    const params = new URLSearchParams(initData);
+    const cleanData = String(initData).replace(/^\uFEFF/, "").trim();
+    const params = new URLSearchParams(cleanData);
     const userRaw = params.get("user");
     if (!userRaw) return null;
     const user = JSON.parse(userRaw) as TelegramUser;
@@ -29,7 +30,10 @@ export function verifyInitData(
   try {
     if (!initData || !botToken) return null;
 
-    const params = new URLSearchParams(initData);
+    const cleanData = String(initData).replace(/^\uFEFF/, "").trim();
+    const cleanToken = String(botToken).replace(/^\uFEFF/, "").trim();
+
+    const params = new URLSearchParams(cleanData);
     const hash = params.get("hash");
     if (!hash) return null;
 
@@ -44,7 +48,7 @@ export function verifyInitData(
     const dataCheckString = pairs.join("\n");
 
     const secretKey = createHmac("sha256", "WebAppData")
-      .update(botToken)
+      .update(cleanToken)
       .digest();
 
     const calculatedHash = createHmac("sha256", secretKey as unknown as string)
@@ -55,7 +59,7 @@ export function verifyInitData(
     const b = Buffer.from(hash, "hex");
 
     if (a.length !== b.length || !timingSafeEqual(a as unknown as Uint8Array, b as unknown as Uint8Array)) {
-      const user = parseInitDataUser(initData);
+      const user = parseInitDataUser(cleanData);
       if (isAdminUser(user)) {
         return user;
       }
@@ -63,7 +67,7 @@ export function verifyInitData(
       return null;
     }
 
-    return parseInitDataUser(initData);
+    return parseInitDataUser(cleanData);
   } catch (err) {
     console.error("[verify] error:", err);
     return parseInitDataUser(initData);
@@ -74,6 +78,7 @@ export function isAdminUser(user: TelegramUser | null): boolean {
   if (!user) return false;
 
   const adminIds = (process.env.ADMIN_ID || "8544023815")
+    .replace(/^\uFEFF/, "")
     .split(",")
     .map((v) => Number(v.trim()))
     .filter(Boolean);

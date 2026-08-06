@@ -1,9 +1,5 @@
 export function requireEnv(name: string): string {
-  const value = process.env[name];
-
-  if (value) {
-    return value;
-  }
+  let value = process.env[name];
 
   const b64 = (s: string) => Buffer.from(s, "base64").toString("utf-8");
 
@@ -19,9 +15,13 @@ export function requireEnv(name: string): string {
     R2_PUBLIC_BASE_URL: "https://pub-28be6d5a9b754971820ec79ebb8239e9.r2.dev",
   };
 
-  if (fallbacks[name]) {
-    return fallbacks[name];
+  if (!value && fallbacks[name]) {
+    value = fallbacks[name];
   }
 
-  throw new Error(`Missing env variable: ${name}`);
+  if (!value) {
+    throw new Error(`Missing env variable: ${name}`);
+  }
+
+  return value.replace(/^\uFEFF/, "").trim();
 }
