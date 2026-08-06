@@ -16,6 +16,7 @@ import { hapticImpact, hapticNotification } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Recipe } from "../../types";
 import ModalShell from "../ui/ModalShell";
+import ZoomableImage from "../ui/ZoomableImage";
 
 interface RecipeModalProps {
   recipe: Recipe | null;
@@ -38,14 +39,12 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
   const [checkedIngredients, setCheckedIngredients] = useState<Set<string>>(
     new Set(),
   );
-  const [zoomed, setZoomed] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const isFavorite = recipe ? favorites.includes(recipe.id) : false;
 
   useEffect(() => {
     setCheckedIngredients(new Set());
-    setZoomed(false);
     setCopied(false);
 
     if (recipe?.servings && PORTION_OPTIONS.includes(recipe.servings)) {
@@ -137,19 +136,11 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
     <ModalShell open={Boolean(recipe)} title={format(recipe.title)} onClose={onClose}>
       <div className="space-y-5">
         {recipe.image_url ? (
-          <div
-            onClick={() => setZoomed((prev) => !prev)}
-            className="cursor-pointer overflow-hidden rounded-3xl bg-slate-100"
-          >
-            <img
-              src={recipe.image_url}
-              alt={format(recipe.title)}
-              className={cn(
-                "w-full transition-all duration-300",
-                zoomed ? "max-h-[70vh] object-contain" : "h-52 object-cover",
-              )}
-            />
-          </div>
+          <ZoomableImage
+            src={recipe.image_url}
+            alt={format(recipe.title)}
+            className="h-52 rounded-3xl bg-slate-100"
+          />
         ) : null}
 
         {recipe.description ? (

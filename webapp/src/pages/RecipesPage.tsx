@@ -14,6 +14,7 @@ import type { DifficultyKey, Recipe } from "../types";
 export default function RecipesPage() {
   const {
     t,
+    format,
     recipesSearchQuery,
     setRecipesSearchQuery,
   } = useApp();
@@ -142,18 +143,37 @@ export default function RecipesPage() {
       />
 
       {mode === "catalog" ? (
-        filteredRecipes.length === 0 ? (
+        query.trim().length >= 2 ? (
+          <div className="space-y-2">
+            {filteredRecipes.slice(0, 10).map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setSelectedRecipe(r)}
+                className="flex w-full items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 text-left shadow-sm active:bg-slate-50"
+              >
+                <span className="text-lg">🍳</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold text-slate-900">{format(r.title)}</span>
+                  <span className="block text-[11px] text-slate-400">
+                    {format(r.category ?? "")}{r.cook_time_minutes ? ` • ${r.cook_time_minutes} daqiqa` : ""}
+                  </span>
+                </span>
+              </button>
+            ))}
+            {filteredRecipes.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+                {t("noRecipes")}
+              </div>
+            ) : null}
+          </div>
+        ) : filteredRecipes.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
             {t("noRecipes")}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 items-stretch gap-3">
             {filteredRecipes.map((recipe) => (
-              <RecipeCard
-                key={recipe.id}
-                recipe={recipe}
-                onOpen={setSelectedRecipe}
-              />
+              <RecipeCard key={recipe.id} recipe={recipe} onOpen={setSelectedRecipe} />
             ))}
           </div>
         )

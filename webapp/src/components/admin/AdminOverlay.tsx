@@ -321,6 +321,42 @@ function UsersAdmin() {
   );
 }
 
+function CardSettings() {
+  const { format } = useApp();
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardHolder, setCardHolder] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    adminRequest("get_payment_card")
+      .then((res) => {
+        const v = res.data?.value;
+        if (v) {
+          setCardNumber(v.card_number ?? "");
+          setCardHolder(v.card_holder ?? "");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    await adminRequest("save_payment_card", { card_number: cardNumber, card_holder: cardHolder });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  return (
+    <div className="space-y-2 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+      <p className="text-xs font-extrabold text-slate-700">{format("💳 To'lov kartasi (bot va ilovada ko'rinadi)")}</p>
+      <input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} placeholder="8600 0000 0000 0000" className={inputClass} />
+      <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Karta egasi ismi" className={inputClass} />
+      <button onClick={save} className="h-10 w-full rounded-2xl bg-[#DB2777] text-xs font-extrabold text-white">
+        {saved ? format("✅ Saqlandi") : format("Saqlash")}
+      </button>
+    </div>
+  );
+}
+
 // =====================
 // PAYMENTS ADMIN
 // =====================
@@ -352,6 +388,7 @@ function PaymentsAdmin() {
 
   return (
     <div className="space-y-3">
+      <CardSettings />
       {loading ? (
         <div className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />
       ) : payments.length === 0 ? (

@@ -36,8 +36,7 @@ export default function BottomNav() {
       className="safe-bottom fixed inset-x-0 bottom-0 z-50"
     >
       <div className="mx-auto w-full max-w-md px-4 pb-4">
-        {/* ✅ bg-white/90 olib tashlandi — endi glass (shaffof + yengil blur) */}
-        <div className="glass rounded-3xl border border-white/40 shadow-[0_18px_40px_rgba(15,23,42,0.10)]">
+        <div className="rounded-3xl border border-white/50 bg-white/85 shadow-[0_18px_40px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-150">
           <div className="grid grid-cols-4 px-2 py-2">
             {TABS.map((tab) => {
               const active = activeTab === tab.id;

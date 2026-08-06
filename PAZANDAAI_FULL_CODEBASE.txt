@@ -791,6 +791,7 @@ async def unknown_message(message: Message) -> None:
 
 `python
 import logging
+import time
 from aiogram.types import CallbackQuery, Message, User
 
 from app.config import get_settings
@@ -798,20 +799,26 @@ from app.services.db import db
 
 settings = get_settings()
 
+_LANG_CACHE: dict[int, tuple[float, str]] = {}
+
 
 def is_admin(user_id: int) -> bool:
     return user_id == settings.ADMIN_ID
 
 
 async def get_lang(user_id: int) -> str:
+    now = time.monotonic()
+    cached = _LANG_CACHE.get(user_id)
+    if cached and now - cached[0] < 60:
+        return cached[1]
     try:
         user = await db.get_user(user_id)
-        if not user:
-            return "latn"
-        return user.get("language", "latn")
+        lang = user.get("language", "latn") if user else "latn"
     except Exception as e:
         logging.warning(f"get_lang fallback error: {e}")
-        return "latn"
+        lang = "latn"
+    _LANG_CACHE[user_id] = (now, lang)
+    return lang
 
 
 async def ensure_user(tg_user: User) -> dict:
@@ -9961,6 +9968,71 @@ import ImageUploader from "./ImageUploader";
 const inputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#DB2777]/40";
 
+function parseMaybeJson(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try { const p = JSON.parse(value); return Array.isArray(p) ? p : []; } catch { return []; }
+  }
+  return [];
+}
+
+function ingredientsToLines(list: any[]): string {
+  return list
+    .map((i) => {
+      const name = String(i?.name ?? "").trim();
+      const qty = typeof i?.quantity === "number" ? String(i.quantity) : "";
+      const unit = String(i?.unit ?? "").trim();
+      const parts = [name, qty, unit].filter((p, idx) => !(idx > 0 && p === ""));
+      return parts.join(" | ");
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function linesToIngredients(text: string): any[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) {
+    try { const arr = JSON.parse(trimmed); if (Array.isArray(arr)) return arr; } catch {}
+  }
+  return trimmed.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const parts = line.split("|").map((s) => s.trim());
+    const [name, qty, unit] = parts;
+    const item: any = { name: name || line };
+    if (qty) {
+      const num = Number(qty.replace(",", "."));
+      if (!Number.isNaN(num)) item.quantity = num;
+      else item.name = `${name} (${qty})`;
+    }
+    if (unit) item.unit = unit;
+    return item;
+  });
+}
+
+function stepsToLines(list: any[]): string {
+  return list
+    .map((s) => {
+      const text = String(s?.text ?? "").trim();
+      const timer = typeof s?.timer_seconds === "number" && s.timer_seconds ? ` | ${s.timer_seconds}` : "";
+      return text + timer;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function linesToSteps(text: string): any[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) {
+    try { const arr = JSON.parse(trimmed); if (Array.isArray(arr)) return arr; } catch {}
+  }
+  return trimmed.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const m = line.match(/^(.*?)\s*\|\s*(\d+)\s*$/);
+    if (m) return { text: m[1], timer_seconds: Number(m[2]) };
+    return { text: line };
+  });
+}
+
 function AdminInner() {
   const { closeModal, format, user } = useApp();
   const { loading, isAdmin } = useSession();
@@ -10377,8 +10449,8 @@ const emptyRecipeForm: RecipeFormState = {
   difficulty: "oson",
   servings: "4",
   is_published: true,
-  ingredients_text: "[]",
-  steps_text: "[]",
+  ingredients_text: "",
+  steps_text: "",
 };
 
 function RecipesAdmin() {
@@ -10416,10 +10488,8 @@ function RecipesAdmin() {
 
   const openEdit = async (item: RecipeListItem) => {
     try {
-      const response = await adminRequest("list_recipes");
-      const fullItems = response.data ?? [];
-      const full = fullItems.find((row: any) => row.id === item.id);
-
+      const response = await adminRequest("get_recipe", { id: item.id });
+      const full = response.data;
       if (!full) return;
 
       setForm({
@@ -10432,8 +10502,8 @@ function RecipesAdmin() {
         difficulty: full.difficulty ?? "oson",
         servings: String(full.servings ?? "4"),
         is_published: Boolean(full.is_published),
-        ingredients_text: JSON.stringify(full.ingredients ?? [], null, 2),
-        steps_text: JSON.stringify(full.steps ?? [], null, 2),
+        ingredients_text: ingredientsToLines(parseMaybeJson(full.ingredients)),
+        steps_text: stepsToLines(parseMaybeJson(full.steps)),
       });
 
       setView("form");
@@ -10445,22 +10515,8 @@ function RecipesAdmin() {
   const save = async () => {
     setError(null);
 
-    let ingredients: unknown[] = [];
-    let steps: unknown[] = [];
-
-    try {
-      ingredients = JSON.parse(form.ingredients_text || "[]");
-    } catch {
-      setError(format("Masalliqlar JSON formatida emas"));
-      return;
-    }
-
-    try {
-      steps = JSON.parse(form.steps_text || "[]");
-    } catch {
-      setError(format("Bosqichlar JSON formatida emas"));
-      return;
-    }
+    const ingredients = linesToIngredients(form.ingredients_text);
+    const steps = linesToSteps(form.steps_text);
 
     const payload: any = {
       title: form.title.trim(),
@@ -10584,31 +10640,41 @@ function RecipesAdmin() {
             <option value="qiyin">{format("Qiyin")}</option>
           </select>
 
-          <textarea
-            value={form.ingredients_text}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                ingredients_text: event.target.value,
-              }))
-            }
-            placeholder='[{"name":"Guruch","quantity":500,"unit":"g"}]'
-            rows={6}
-            className={`${inputClass} font-mono text-xs`}
-          />
+          <div>
+            <textarea
+              value={form.ingredients_text}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  ingredients_text: event.target.value,
+                }))
+              }
+              placeholder={format("Guruch | 1 | kg\nPiyoz | 2 | dona")}
+              rows={6}
+              className={`${inputClass} font-mono text-xs`}
+            />
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">
+              {format("Har qator: Nomi | miqdor | birlik. Misol: Guruch | 1 | kg")}
+            </p>
+          </div>
 
-          <textarea
-            value={form.steps_text}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                steps_text: event.target.value,
-              }))
-            }
-            placeholder='[{"text":"...","timer_seconds":600}]'
-            rows={6}
-            className={`${inputClass} font-mono text-xs`}
-          />
+          <div>
+            <textarea
+              value={form.steps_text}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  steps_text: event.target.value,
+                }))
+              }
+              placeholder={format("Zirvakni pishiring | 600\nGuruchni soling | 1200")}
+              rows={6}
+              className={`${inputClass} font-mono text-xs`}
+            />
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">
+              {format("Har qator: Bosqich matni | taymer soniya. Misol: Guruchni soling | 1200")}
+            </p>
+          </div>
 
           <label className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
             <input
@@ -11128,10 +11194,8 @@ function LifehacksAdmin() {
 
   const openEdit = async (item: LifehackListItem) => {
     try {
-      const response = await adminRequest("list_lifehacks");
-      const fullItems = response.data ?? [];
-      const full = fullItems.find((row: any) => row.id === item.id);
-
+      const response = await adminRequest("get_lifehack", { id: item.id });
+      const full = response.data;
       if (!full) return;
 
       setForm({
@@ -12812,15 +12876,14 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
 ## 📄 webapp/src/components/recipes/SmartMatchPanel.tsx
 
 `typescript
-import { Search, Sparkles, X } from "lucide-react";
+import { Loader2, Search, Sparkles, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 import { useApp } from "../../context/AppContext";
-import {
-  getRecipeMatch,
-  getUniqueIngredients,
-  normalizeIngredient,
-} from "../../lib/recipe-utils";
+import { PRODUCTS, PRODUCT_CATEGORIES, getProduct } from "../../lib/products";
+import { getRecipeMatch } from "../../lib/recipe-utils";
 import { hapticNotification, hapticSelection } from "../../lib/telegram";
+import { cn } from "../../lib/utils";
 import type { Recipe } from "../../types";
 import RecipeCard from "./RecipeCard";
 
@@ -12829,194 +12892,199 @@ interface SmartMatchPanelProps {
   onOpenRecipe: (recipe: Recipe) => void;
 }
 
-export default function SmartMatchPanel({
-  recipes,
-  onOpenRecipe,
-}: SmartMatchPanelProps) {
+export default function SmartMatchPanel({ recipes, onOpenRecipe }: SmartMatchPanelProps) {
   const { format, t } = useApp();
-  const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
-  const [ingredientQuery, setIngredientQuery] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
+  const [activeCat, setActiveCat] = useState<string>("all");
+  const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  const allIngredients = useMemo(
-    () => getUniqueIngredients(recipes),
-    [recipes],
-  );
+  const filteredProducts = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return PRODUCTS.filter((p) => (activeCat === "all" ? true : p.category === activeCat))
+      .filter((p) => {
+        if (!q) return true;
+        const hay = [p.label, p.key, ...(p.aliases ?? [])].join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+  }, [query, activeCat]);
 
-  const candidates = useMemo(() => {
-    const normalizedQuery = normalizeIngredient(ingredientQuery);
-    return allIngredients
-      .filter((ingredient) => !selectedIngredients.includes(ingredient))
-      .filter((ingredient) =>
-        normalizedQuery
-          ? normalizeIngredient(ingredient).includes(normalizedQuery)
-          : true,
-      )
-      .slice(0, 24);
-  }, [allIngredients, ingredientQuery, selectedIngredients]);
-
-  const matches = useMemo(() => {
-    if (!selectedIngredients.length) return [];
-    return recipes
-      .map((recipe) => ({
-        recipe,
-        match: getRecipeMatch(recipe, selectedIngredients),
-      }))
-      .filter((item) =>
-        ["exact", "almost", "partial"].includes(item.match.status),
-      )
-      .sort((a, b) => b.match.matchPercent - a.match.matchPercent);
-  }, [recipes, selectedIngredients]);
-
-  const exact = matches.filter((item) => item.match.status === "exact");
-  const almost = matches.filter((item) => item.match.status === "almost");
-  const partial = matches.filter((item) => item.match.status === "partial");
-
-  const toggleIngredient = (ingredient: string) => {
+  const toggle = (key: string) => {
     hapticSelection();
-    setSelectedIngredients((prev) =>
-      prev.includes(ingredient)
-        ? prev.filter((item) => item !== ingredient)
-        : [...prev, ingredient],
-    );
+    setShowResults(false);
+    setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   };
 
-  // ✅ YANGI: tugma → natijalar + scroll
+  const selectedLabels = useMemo(
+    () => selected.map((k) => getProduct(k)?.label ?? k),
+    [selected],
+  );
+
+  const matches = useMemo(() => {
+    if (!showResults || !selectedLabels.length) return [];
+    return recipes
+      .map((recipe) => ({ recipe, match: getRecipeMatch(recipe, selectedLabels) }))
+      .filter((item) => ["exact", "almost", "partial"].includes(item.match.status))
+      .sort((a, b) => b.match.matchPercent - a.match.matchPercent);
+  }, [recipes, selectedLabels, showResults]);
+
+  const exact = matches.filter((m) => m.match.status === "exact");
+  const almost = matches.filter((m) => m.match.status === "almost");
+  const partial = matches.filter((m) => m.match.status === "partial");
+
+  // ✅ YUQORIDA turadigan tugma — bosilganda animatsiya bilan topadi
   const findMatches = () => {
-    if (!selectedIngredients.length) return;
+    if (!selected.length || searching) return;
     hapticNotification("success");
-    setShowResults(true);
+    setSearching(true);
+    setShowResults(false);
     setTimeout(() => {
-      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 120);
+      setSearching(false);
+      setShowResults(true);
+      setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    }, 900);
   };
 
   const badgeLabel = (item: (typeof matches)[number]) => {
-    const missingCount = item.match.missing.length;
-    if (!missingCount) return "100% mos";
-    return `${item.match.matchPercent}% • ${missingCount} ta yetmaydi`;
+    const missing = item.match.missing.length;
+    if (!missing) return "100% mos ✅";
+    return `${item.match.matchPercent}% • ${missing} ta yetmaydi`;
   };
 
-  const renderGroup = (
-    title: string,
-    items: typeof matches,
-    badgeClassName: string,
-  ) => {
+  const renderGroup = (title: string, items: typeof matches, badgeClass: string) => {
     if (!items.length) return null;
     return (
-      <section className="space-y-2">
+      <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="space-y-2">
         <h3 className="text-sm font-extrabold text-slate-900">{title}</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 items-stretch gap-3">
           {items.map((item) => (
             <RecipeCard
               key={item.recipe.id}
               recipe={item.recipe}
               onOpen={onOpenRecipe}
-              badge={{ label: badgeLabel(item), className: badgeClassName }}
+              badge={{ label: badgeLabel(item), className: badgeClass }}
               missing={item.match.missing.map((m) => m.name)}
             />
           ))}
         </div>
-      </section>
+      </motion.section>
     );
   };
 
   return (
     <div className="space-y-4">
-      <div className="rounded-3xl border border-[#DB2777]/10 bg-[#DB2777]/5 p-4">
+      {/* ✅ ChatGPT-uslubidagi prompt box */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm focus-within:border-[#DB2777]/40">
         <div className="flex items-center gap-2 text-[#DB2777]">
-          <Sparkles size={17} />
+          <Sparkles size={16} />
           <h3 className="font-display text-sm font-extrabold">{t("aiMatch")}</h3>
         </div>
-        <p className="mt-2 text-xs leading-5 text-slate-600">
-          {t("matchSelectIngredients")}
-        </p>
-        {selectedIngredients.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {selectedIngredients.map((ingredient) => (
-              <button
-                key={ingredient}
-                onClick={() => toggleIngredient(ingredient)}
-                className="flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm"
-              >
-                {format(ingredient)}
-                <X size={12} className="text-slate-400" />
-              </button>
-            ))}
-            <button
-              onClick={() => {
-                setSelectedIngredients([]);
-                setShowResults(false);
-              }}
-              className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-bold text-white"
-            >
+        {selected.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {selected.map((key) => {
+              const p = getProduct(key);
+              return (
+                <button key={key} onClick={() => toggle(key)} className="flex items-center gap-1 rounded-full bg-[#DB2777]/10 px-2.5 py-1.5 text-xs font-bold text-[#DB2777]">
+                  <span>{p?.emoji}</span>
+                  {format(p?.label ?? key)}
+                  <X size={11} />
+                </button>
+              );
+            })}
+            <button onClick={() => { setSelected([]); setShowResults(false); }} className="rounded-full bg-slate-900 px-2.5 py-1.5 text-xs font-bold text-white">
               {t("matchClear")}
             </button>
           </div>
-        ) : null}
+        ) : (
+          <p className="mt-2 text-xs leading-5 text-slate-500">{t("matchSelectIngredients")}</p>
+        )}
+        <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
+          <Search size={15} className="text-slate-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={format("Qidirish: sabzi, sut, guruch...")}
+            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+          />
+        </div>
       </div>
 
-      <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-        <Search size={16} className="text-slate-400" />
-        <input
-          value={ingredientQuery}
-          onChange={(event) => setIngredientQuery(event.target.value)}
-          placeholder={t("matchSearchIngredient")}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-        />
-      </div>
+      {/* ✅ TUGMA — pastda emas, tanlovdan keyin darhol */}
+      <button
+        onClick={findMatches}
+        disabled={!selected.length || searching}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white shadow-lg active:scale-[0.98] disabled:opacity-40"
+      >
+        {searching ? <Loader2 size={17} className="animate-spin" /> : <Sparkles size={17} />}
+        {searching ? format("Tanlamoqda...") : `${t("matchFind")} ${selected.length ? `(${selected.length})` : ""}`}
+      </button>
 
-      <div className="flex flex-wrap gap-2">
-        {candidates.map((ingredient) => (
+      {/* Kategoriyalar */}
+      <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
+        <button
+          onClick={() => setActiveCat("all")}
+          className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === "all" ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}
+        >
+          {t("all")}
+        </button>
+        {PRODUCT_CATEGORIES.map((c) => (
           <button
-            key={ingredient}
-            onClick={() => toggleIngredient(ingredient)}
-            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600"
+            key={c.id}
+            onClick={() => setActiveCat(c.id)}
+            className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-bold", activeCat === c.id ? "bg-slate-900 text-white" : "bg-white text-slate-500 shadow-sm")}
           >
-            {format(ingredient)}
+            {c.emoji} {format(c.label)}
           </button>
         ))}
       </div>
 
-      {/* ✅ MOS TAOMNI TOPISH tugmasi */}
-      {selectedIngredients.length > 0 ? (
-        <button
-          onClick={findMatches}
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white shadow-lg active:scale-[0.98]"
-        >
-          <Sparkles size={16} />
-          {format("Mos taomni topish")} ({selectedIngredients.length}{" "}
-          {t("matchSelected")})
-        </button>
-      ) : null}
+      {/* ✅ Emoji mahsulotlar grid */}
+      <div className="grid grid-cols-4 gap-2">
+        {filteredProducts.map((p) => {
+          const sel = selected.includes(p.key);
+          return (
+            <motion.button key={p.key} whileTap={{ scale: 0.92 }} onClick={() => toggle(p.key)}
+              className={cn(
+                "flex flex-col items-center gap-1 rounded-2xl border p-2 transition-colors",
+                sel ? "border-[#DB2777] bg-[#DB2777]/10" : "border-slate-100 bg-white shadow-sm",
+              )}
+            >
+              <span className="text-xl">{p.emoji}</span>
+              <span className={cn("line-clamp-1 text-center text-[10px] font-semibold", sel ? "text-[#DB2777]" : "text-slate-600")}>
+                {format(p.label)}
+              </span>
+            </motion.button>
+          );
+        })}
+      </div>
 
-      <div ref={resultsRef} className="space-y-5 scroll-mt-20">
-        {showResults && selectedIngredients.length > 0 ? (
-          matches.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              {t("matchNoResults")}
-            </div>
-          ) : (
-            <>
-              {renderGroup(
-                t("matchExact"),
-                exact,
-                "bg-emerald-50 text-emerald-600 ring-emerald-200",
+      {/* Natijalar — animatsiya bilan */}
+      <div ref={resultsRef} className="scroll-mt-20 space-y-5">
+        <AnimatePresence>
+          {searching ? (
+            <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid grid-cols-2 gap-3">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-48 animate-pulse rounded-3xl bg-gradient-to-br from-pink-50 to-rose-100" />
+              ))}
+            </motion.div>
+          ) : showResults ? (
+            <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+              {matches.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+                  {t("matchNoResults")}
+                </div>
+              ) : (
+                <>
+                  {renderGroup(`✅ ${t("matchExact")}`, exact, "bg-emerald-50 text-emerald-600 ring-emerald-200")}
+                  {renderGroup(`🟡 ${t("matchAlmost")}`, almost, "bg-amber-50 text-amber-600 ring-amber-200")}
+                  {renderGroup(`🔵 ${t("matchPartial")}`, partial, "bg-sky-50 text-sky-600 ring-sky-200")}
+                </>
               )}
-              {renderGroup(
-                t("matchAlmost"),
-                almost,
-                "bg-amber-50 text-amber-600 ring-amber-200",
-              )}
-              {renderGroup(
-                t("matchPartial"),
-                partial,
-                "bg-sky-50 text-sky-600 ring-sky-200",
-              )}
-            </>
-          )
-        ) : null}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -14163,6 +14231,167 @@ export function getCategoryEmoji(category?: string): string {
 
 ---
 
+## 📄 webapp/src/lib/products.ts
+
+`typescript
+export interface Product {
+  key: string;
+  label: string;
+  emoji: string;
+  category: string;
+  aliases?: string[];
+}
+
+export const PRODUCT_CATEGORIES = [
+  { id: "veg", label: "Sabzavotlar", emoji: "🥕" },
+  { id: "greens", label: "Ko'kat & Ziravor", emoji: "🌿" },
+  { id: "meat", label: "Go'sht & Baliq", emoji: "🥩" },
+  { id: "dairy", label: "Sut & Tuxum", emoji: "🥛" },
+  { id: "grain", label: "Un & Don", emoji: "🌾" },
+  { id: "fruit", label: "Mevalar", emoji: "🍎" },
+  { id: "nuts", label: "Yong'oq & Urug'", emoji: "🥜" },
+  { id: "pantry", label: "Yog' & Souslar", emoji: "🫒" },
+] as const;
+
+const P = (
+  key: string,
+  label: string,
+  emoji: string,
+  category: string,
+  aliases: string[] = [],
+): Product => ({ key, label, emoji, category, aliases });
+
+export const PRODUCTS: Product[] = [
+  // 🥕 Sabzavotlar
+  P("sabzi", "Sabzi", "🥕", "veg", ["sariq sabzi", "qizil sabzi"]),
+  P("piyoz", "Piyoz", "🧅", "veg", ["qizil piyoz", "ko'k piyoz", "sharlot piyoz"]),
+  P("kartoshka", "Kartoshka", "🥔", "veg"),
+  P("batat", "Shirin kartoshka", "🍠", "veg", ["batat"]),
+  P("sarimsoq", "Sarimsoq", "🧄", "veg"),
+  P("pomidor", "Pomidor", "🍅", "veg", ["tomat"]),
+  P("bodring", "Bodring", "🥒", "veg"),
+  P("bulgor", "Bulg'or qalampiri", "🫑", "veg", ["bolg'or"]),
+  P("achchiq", "Achchiq qalampir", "🌶️", "veg", ["chili", "jalapeno"]),
+  P("karam", "Karam", "🥬", "veg"),
+  P("zucchini", "Qovoqcha", "🥒", "veg", ["zucchini"]),
+  P("lavlagi", "Lavlagi", "🥬", "veg"),
+  P("qoziqorin", "Qo'ziqorin", "🍄", "veg", ["shampinyon", "veshenka"]),
+  // 🌿 Ko'kat & Ziravor
+  P("ispanoq", "Ispanoq / Kale", "🥬", "greens", ["kale", "mangold", "xardal barglari"]),
+  P("kashnich", "Kashnich", "🌿", "greens"),
+  P("petrushka", "Petrushka", "🌿", "greens"),
+  P("ukrop", "Ukrop", "🌿", "greens"),
+  P("rayhon", "Rayhon", "🌿", "greens", ["basil", "reyhan"]),
+  P("yalpiz", "Yalpiz", "🌿", "greens"),
+  P("shivit", "Shivit", "🌿", "greens"),
+  P("rozmarin", "Rozmarin", "🌿", "greens"),
+  P("timyan", "Timyan", "🌿", "greens"),
+  P("estragon", "Estragon", "🌿", "greens"),
+  P("zira", "Zira", "🟤", "greens"),
+  P("koriandr", "Koriandr", "🌱", "greens"),
+  P("kurkuma", "Kurkuma", "🟡", "greens"),
+  P("karri", "Karri", "🍛", "greens"),
+  P("dolchin", "Dolchin", "🍂", "greens", ["dolchin kukuni"]),
+  P("hil", "Hil (kardamon)", "🌱", "greens", ["kardamon"]),
+  P("zanjabil", "Zanjabil", "🫚", "greens"),
+  P("vanil", "Vanil", "🌼", "greens", ["vanil ekstrakti", "vanillin"]),
+  P("tuz", "Tuz", "🧂", "greens"),
+  P("murch", "Qora murch", "⚫", "greens", ["murch"]),
+  // 🥩 Go'sht & Baliq
+  P("mol", "Mol go'shti", "🥩", "meat", ["mol go'shti", "mol tili", "mol jigari"]),
+  P("qoy", "Qo'y go'shti", "🍖", "meat", ["qo'y go'shti", "qovurg'a"]),
+  P("tovuq", "Tovuq", "🍗", "meat"),
+  P("qiyma", "Qiyma", "🍖", "meat"),
+  P("jigar", "Jigar", "🍖", "meat"),
+  P("bekon", "Bekon", "🥓", "meat"),
+  P("somon", "Somon (losos)", "🐟", "meat", ["losos", "baliq"]),
+  P("qazi", "Qazi", "🍖", "meat"),
+  // 🥛 Sut & Tuxum
+  P("tuxum", "Tuxum", "🥚", "dairy"),
+  P("sut", "Sut", "🥛", "dairy"),
+  P("qaymoq", "Qaymoq", "🍶", "dairy", ["heavy cream"]),
+  P("saryog", "Sariyog'", "🧈", "dairy", ["saryog'"]),
+  P("qatiq", "Qatiq / Kefir", "🥛", "dairy", ["kefir", "buttermilk"]),
+  P("smetana", "Smetana", "🥛", "dairy"),
+  P("yogurt", "Yogurt", "🥛", "dairy"),
+  P("suzma", "Suzma / Qatiq", "🥛", "dairy"),
+  P("tvorog", "Tvorog / Cream cheese", "🧀", "dairy", ["cream cheese"]),
+  P("pishloq", "Pishloq", "🧀", "dairy", ["motsarella", "cheddar", "xallumi", "parmezan", "feta", "brynza", "echki pishlog'i", "rikotta"]),
+  P("muzqaymoq", "Muzqaymoq", "🍨", "dairy"),
+  P("kondensat", "Quyultirilgan sut", "🥫", "dairy", ["quyultirilgan sut", "sgushchenka", "kondensirovannoye"]),
+  // 🌾 Un & Don
+  P("guruch", "Guruch", "🍚", "grain", ["devzira", "lazer"]),
+  P("un", "Un", "🌾", "grain", ["bug'doy uni"]),
+  P("javdar", "Javdar uni", "🌾", "grain"),
+  P("suli", "Suli uni / yormasi", "🥣", "grain", ["suli"]),
+  P("makkoun", "Makkajo'xori uni", "🌽", "grain", ["cornmeal"]),
+  P("kraxmal", "Kraxmal", "🥣", "grain"),
+  P("manna", "Manna yarmasi", "🥣", "grain", ["manka"]),
+  P("makaron", "Makaron / Spagetti", "🍝", "grain", ["spagetti", "pasta"]),
+  P("xamirturush", "Xamirturush", "🫧", "grain", ["drojji", "sourdough", "hamirturush"]),
+  P("kreker", "Kreker", "🍪", "grain", ["grek krekeri"]),
+  P("non", "Non / Muffin", "🍞", "grain", ["muffin"]),
+  P("nohot", "Nohut", "🫘", "grain", ["noxat", "nohot"]),
+  P("lobiya", "Lobiya", "🫘", "grain", ["loviya", "qora lobiya"]),
+  P("kinoa", "Kinoa / Yarma", "🥣", "grain", ["kinoa", "yarma", "farro", "bulg'or"]),
+  // 🍎 Mevalar
+  P("olma", "Olma", "🍎", "fruit"),
+  P("limon", "Limon", "🍋", "fruit"),
+  P("laym", "Laym", "🍋", "fruit"),
+  P("apelsin", "Apelsin", "🍊", "fruit"),
+  P("greypfrut", "Greypfrut", "🍊", "fruit"),
+  P("banan", "Banan", "🍌", "fruit"),
+  P("qulupnay", "Qulupnay", "🍓", "fruit"),
+  P("chernika", "Chernika", "🫐", "fruit", ["smorodina"]),
+  P("mango", "Mango", "🥭", "fruit"),
+  P("ananas", "Ananas", "🍍", "fruit"),
+  P("tarvuz", "Tarvuz", "🍉", "fruit"),
+  P("qovun", "Qovun", "🍈", "fruit"),
+  P("shaftoli", "Shaftoli", "🍑", "fruit"),
+  P("orik", "O'rik", "🍑", "fruit"),
+  P("olxori", "Olxori", "🍇", "fruit"),
+  P("mayiz", "Mayiz", "🍇", "fruit"),
+  P("xurmo", "Xurmo (unab)", "🌰", "fruit", ["unab", "xurmo"]),
+  P("anor", "Anor", "🔴", "fruit"),
+  P("nok", "Nok", "🍐", "fruit"),
+  P("avokado", "Avokado", "🥑", "fruit"),
+  // 🥜 Yong'oq & Urug'
+  P("yongoq", "Yong'oq", "🌰", "nuts", ["gretskiy", "pekan"]),
+  P("bodom", "Bodom", "🌰", "nuts"),
+  P("funduk", "Funduk", "🌰", "nuts"),
+  P("pista", "Pista", "🥜", "nuts"),
+  P("yeryongoq", "Yer-yong'oq", "🥜", "nuts", ["peanut"]),
+  P("kunchut", "Kunchut", "⚪", "nuts", ["sezam", "taxini"]),
+  P("qovoqurug", "Qovoq urug'i", "🎃", "nuts", ["pepitas"]),
+  P("kokos", "Kokos", "🥥", "nuts", ["kokos qiyg'ichi"]),
+  // 🫒 Yog' & Souslar
+  P("osyog", "O'simlik yog'i", "🫒", "pantry", ["o'simlik yog'i", "paxta yog'i"]),
+  P("zaytun", "Zaytun yog'i", "🫒", "pantry"),
+  P("kokosyog", "Kokos yog'i / suti", "🥥", "pantry", ["kokos suti", "kokos yog'i"]),
+  P("soya", "Soya sousi", "🍶", "pantry", ["soya sousi", "soyali"]),
+  P("sirka", "Sirka", "🍶", "pantry", ["olma sirkasi", "guruch sirkasi", "sirka"]),
+  P("tomat", "Tomat pastasi", "🥫", "pantry", ["tomat pastasi", "pomidor pastasi", "djem"]),
+  P("asal", "Asal", "🍯", "pantry"),
+  P("shakar", "Shakar", "🍬", "pantry"),
+  P("jshakar", "Jigarrang shakar", "🍬", "pantry", ["jigarrang shakar"]),
+  P("pudra", "Shakar kukuni", "🍬", "pantry", ["shakar kukuni", "pudra"]),
+  P("kakao", "Kakao", "🍫", "pantry"),
+  P("shokolad", "Shokolad", "🍫", "pantry"),
+  P("qahva", "Qahva", "☕", "pantry", ["espresso"]),
+  P("matcha", "Matcha choy", "🍵", "pantry", ["choy"]),
+  P("mayonez", "Mayonez", "🥫", "pantry"),
+  P("xardal", "Xardal", "🟡", "pantry", ["dijon"]),
+  P("kimchi", "Kimchi", "🥬", "pantry"),
+];
+
+export function getProduct(key: string): Product | undefined {
+  return PRODUCTS.find((p) => p.key === key);
+}
+
+`
+
+---
+
 ## 📄 webapp/src/lib/recipe-utils.ts
 
 `typescript
@@ -15065,212 +15294,126 @@ export default function HomePage() {
 
 `typescript
 import { ChevronLeft, Lightbulb, Search, SearchX } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-
-import {
-  fetchLifehacks,
-  getLifehackCategories,
-} from "../api/lifehacks";
+import { fetchLifehacks, getLifehackCategories } from "../api/lifehacks";
 import LifehackCard from "../components/lifehacks/LifehackCard";
-import LifehackFolderCard from "../components/lifehacks/LifehackFolderCard";
 import { useApp } from "../context/AppContext";
-import { normalizeText } from "../lib/lifehack-utils";
-import {
-  hideBackButton,
-  onBackButton,
-  showBackButton,
-} from "../lib/telegram";
+import { getCategoryEmoji, normalizeText } from "../lib/lifehack-utils";
+import { hideBackButton, onBackButton, showBackButton } from "../lib/telegram";
 import type { Lifehack } from "../types/lifehack";
+
+const FOLDER_GRADIENTS = [
+  "from-pink-100 to-rose-50",
+  "from-amber-100 to-yellow-50",
+  "from-emerald-100 to-teal-50",
+  "from-sky-100 to-blue-50",
+  "from-violet-100 to-purple-50",
+  "from-orange-100 to-amber-50",
+];
 
 export default function LifehacksPage() {
   const { format, t } = useApp();
-
   const [lifehacks, setLifehacks] = useState<Lifehack[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(
-    null,
-  );
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    fetchLifehacks()
-      .then((data) => {
-        setLifehacks(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError(true);
-        setLoading(false);
-      });
+    fetchLifehacks().then((d) => { setLifehacks(d); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     if (selectedCategory) {
       showBackButton();
-
-      const off = onBackButton(() => {
-        setSelectedCategory(null);
-      });
-
-      return () => {
-        off();
-        hideBackButton();
-      };
+      const off = onBackButton(() => setSelectedCategory(null));
+      return () => { off(); hideBackButton(); };
     }
-
     hideBackButton();
-
     return undefined;
   }, [selectedCategory]);
 
-  const categories = useMemo(
-    () => getLifehackCategories(lifehacks),
-    [lifehacks],
-  );
-
+  const categories = useMemo(() => getLifehackCategories(lifehacks), [lifehacks]);
   const countByCategory = useMemo(() => {
     const map = new Map<string, number>();
-
     for (const item of lifehacks) {
       if (!item.category) continue;
-
       map.set(item.category, (map.get(item.category) ?? 0) + 1);
     }
-
     return map;
   }, [lifehacks]);
 
-  const visibleLifehacks = useMemo(() => {
+  const visible = useMemo(() => {
     let items = [...lifehacks];
-
-    if (selectedCategory) {
-      items = items.filter((item) => item.category === selectedCategory);
+    if (selectedCategory) items = items.filter((i) => i.category === selectedCategory);
+    const q = normalizeText(query);
+    if (q) {
+      items = items.filter((i) =>
+        [i.title, i.content, i.category].filter(Boolean).join(" ").toLowerCase().includes(q),
+      );
     }
-
-    const normalizedQuery = normalizeText(query);
-
-    if (normalizedQuery) {
-      items = items.filter((item) => {
-        const haystack = [item.title, item.content, item.category]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-
-        return haystack.includes(normalizedQuery);
-      });
-    }
-
     return items;
   }, [lifehacks, selectedCategory, query]);
-
-  const showFolderGrid =
-    !selectedCategory && !query && categories.length > 1;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <Search size={17} className="text-slate-400" />
-
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t("lifehacksSearch")}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-        />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("lifehacksSearch")} className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
       </div>
 
       {loading ? (
-        showFolderGrid ? (
-          <div className="grid grid-cols-2 gap-3">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <div
-                key={index}
-                className="h-32 animate-pulse rounded-3xl bg-slate-200/70"
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <div
-                key={index}
-                className="h-28 animate-pulse rounded-3xl bg-slate-200/70"
-              />
-            ))}
-          </div>
-        )
-      ) : error ? (
-        <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          {t("errorLoad")}
+        <div className="grid grid-cols-2 gap-3">
+          {[0, 1, 2, 3].map((i) => <div key={i} className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />)}
         </div>
-      ) : showFolderGrid ? (
+      ) : !selectedCategory && !query && categories.length > 1 ? (
         <section className="space-y-3">
-          <h2 className="font-display text-base font-bold text-slate-900">
-            {t("folders")}
-          </h2>
-
-          {categories.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white p-10 text-center">
-              <Lightbulb size={30} className="mb-3 text-slate-300" />
-
-              <p className="text-sm font-semibold text-slate-500">
-                {t("noLifehacks")}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              {categories.map((category) => (
-                <LifehackFolderCard
-                  key={category}
-                  name={category}
-                  count={countByCategory.get(category) ?? 0}
-                  onSelect={() => setSelectedCategory(category)}
-                />
-              ))}
-            </div>
-          )}
+          <h2 className="font-display text-base font-extrabold text-slate-900">{t("folders")}</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {categories.map((cat, idx) => (
+              <motion.button
+                key={cat}
+                whileTap={{ scale: 0.96 }}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.04 }}
+                onClick={() => setSelectedCategory(cat)}
+                className={`rounded-3xl border border-white bg-gradient-to-br ${FOLDER_GRADIENTS[idx % FOLDER_GRADIENTS.length]} p-4 text-left shadow-sm`}
+              >
+                <div className="flex items-start justify-between">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 text-2xl shadow-inner">
+                    {getCategoryEmoji(cat)}
+                  </span>
+                  <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-extrabold text-slate-600">
+                    {countByCategory.get(cat) ?? 0} {t("countSuffix")}
+                  </span>
+                </div>
+                <h3 className="mt-3 line-clamp-1 font-display text-sm font-bold text-slate-800">{format(cat)}</h3>
+              </motion.button>
+            ))}
+          </div>
         </section>
       ) : (
         <section className="space-y-3">
           {selectedCategory ? (
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setSelectedCategory(null)}
-                aria-label={t("back")}
-                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm"
-              >
+              <button onClick={() => setSelectedCategory(null)} aria-label={t("back")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm">
                 <ChevronLeft size={18} />
               </button>
-
-              <h2 className="font-display text-base font-bold text-slate-900">
-                {format(selectedCategory)}
-              </h2>
+              <span className="text-xl">{getCategoryEmoji(selectedCategory)}</span>
+              <h2 className="font-display text-base font-extrabold text-slate-900">{format(selectedCategory)}</h2>
             </div>
           ) : null}
-
-          {visibleLifehacks.length === 0 ? (
+          {visible.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white p-10 text-center">
-              {query ? (
-                <SearchX size={30} className="mb-3 text-slate-300" />
-              ) : (
-                <Lightbulb size={30} className="mb-3 text-slate-300" />
-              )}
-
+              {query ? <SearchX size={30} className="mb-3 text-slate-300" /> : <Lightbulb size={30} className="mb-3 text-slate-300" />}
               <p className="text-sm font-semibold text-slate-500">
-                {query
-                  ? t("noLifehacks")
-                  : selectedCategory
-                    ? t("lifehackEmptyFolder")
-                    : t("noLifehacks")}
+                {query ? t("noLifehacks") : selectedCategory ? t("lifehackEmptyFolder") : t("noLifehacks")}
               </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {visibleLifehacks.map((lifehack) => (
-                <LifehackCard key={lifehack.id} lifehack={lifehack} />
-              ))}
+              {visible.map((lh) => <LifehackCard key={lh.id} lifehack={lh} />)}
             </div>
           )}
         </section>

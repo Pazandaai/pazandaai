@@ -1,7 +1,9 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from html import escape
 from io import BytesIO
+from typing import Any
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -29,12 +31,28 @@ from app.texts.strings import t
 settings = get_settings()
 router = Router()
 
+_CARD_CACHE: dict[str, Any] = {"ts": 0, "value": None}
+
+
+async def get_payment_card() -> dict | None:
+    now = time.monotonic()
+    if _CARD_CACHE["value"] is not None and now - _CARD_CACHE["ts"] < 300:
+        return _CARD_CACHE["value"]
+    value = None
+    try:
+        value = await db.get_app_setting("payment_card")
+    except Exception:
+        value = None
+    _CARD_CACHE["ts"] = now
+    _CARD_CACHE["value"] = value
+    return value
+
 
 class PremiumStates(StatesGroup):
     waiting_screenshot = State()
 
 
-def _premium_text(lang: str) -> str:
+async def _premium_text(lang: str) -> str:
     price = f"{settings.PREMIUM_PRICE_UZS:,}".replace(",", " ")
 
     lines = [
@@ -43,33 +61,39 @@ def _premium_text(lang: str) -> str:
         t(lang, "premium_price", price=price),
     ]
 
-    if settings.PAYMENT_CARD_NUMBER:
+    card = await get_payment_card()
+    card_number = (card or {}).get("card_number") or settings.PAYMENT_CARD_NUMBER
+    card_holder = (card or {}).get("card_holder") or settings.PAYMENT_CARD_HOLDER
+
+    if card_number:
         lines.append(
-            t(lang, "premium_card", card=escape(settings.PAYMENT_CARD_NUMBER))
+            t(lang, "premium_card", card=escape(card_number))
         )
 
-    if settings.PAYMENT_CARD_HOLDER:
+    if card_holder:
         lines.append(
-            t(lang, "premium_card_holder", holder=escape(settings.PAYMENT_CARD_HOLDER))
+            t(lang, "premium_card_holder", holder=escape(card_holder))
         )
 
-    if not settings.PAYMENT_CARD_NUMBER and not settings.PAYMENT_CARD_HOLDER:
+    if not card_number and not card_holder:
         lines.append(t(lang, "premium_not_configured"))
 
     return "\n\n".join(lines)
 
 
 async def _show_premium_message(message: Message, lang: str) -> None:
+    text = await _premium_text(lang)
     await message.answer(
-        _premium_text(lang),
+        text,
         reply_markup=premium_kb(lang),
     )
 
 
 async def _show_premium_callback(callback: CallbackQuery, lang: str) -> None:
+    text = await _premium_text(lang)
     await edit_callback(
         callback,
-        _premium_text(lang),
+        text,
         premium_kb(lang),
     )
     await callback.answer()

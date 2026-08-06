@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { parseIngredientEntry } from "../lib/recipe-utils";
+import { cacheGet, cacheSet } from "../lib/cache";
 import type { Recipe, RecipeStep } from "../types";
 
 const API_BASE = (
@@ -45,7 +46,6 @@ function normalizeRecipe(row: any): Recipe {
     cook_time_minutes: row.cook_time_minutes ?? null,
     difficulty: row.difficulty ?? null,
     servings: row.servings ?? 4,
-    // ✅ YANGI: parser singan \n larni bo'ladi, quantity/unit ajratadi
     ingredients: parseJsonArray(row.ingredients).flatMap((raw) =>
       parseIngredientEntry(raw),
     ),
@@ -54,28 +54,45 @@ function normalizeRecipe(row: any): Recipe {
 }
 
 export async function fetchRecipes(): Promise<Recipe[]> {
+  const cachedRows = cacheGet<any[]>("recipes", 5 * 60 * 1000);
+  if (cachedRows && cachedRows.length) {
+    return cachedRows.map(normalizeRecipe);
+  }
+
+  let rows: any[] = [];
+
   try {
-    const res = await fetch(`${API_BASE}/api/recipes`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/api/recipes`);
     if (res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
-        return json.data.map(normalizeRecipe);
+        rows = json.data;
       }
     }
   } catch {
     // ignore
   }
-  if (!supabase) return [];
-  try {
-    const { data, error } = await supabase
-      .from("recipes")
-      .select("*")
-      .eq("is_published", true)
-      .order("id", { ascending: true })
-      .limit(500);
-    if (error || !data || data.length === 0) return [];
-    return data.map(normalizeRecipe);
-  } catch {
-    return [];
+
+  if (!rows.length && supabase) {
+    try {
+      const { data } = await supabase
+        .from("recipes")
+        .select("*")
+        .eq("is_published", true)
+        .order("id", { ascending: true })
+        .limit(500);
+      if (data && data.length > 0) {
+        rows = data;
+      }
+    } catch {
+      // ignore
+    }
   }
+
+  if (rows.length > 0) {
+    cacheSet("recipes", rows);
+    return rows.map(normalizeRecipe);
+  }
+
+  return [];
 }

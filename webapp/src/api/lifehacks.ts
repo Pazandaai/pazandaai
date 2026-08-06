@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { cacheGet, cacheSet } from "../lib/cache";
 import type { Lifehack } from "../types/lifehack";
 
 const API_BASE = (
@@ -55,40 +56,48 @@ function normalizeRow(row: any): Lifehack {
 }
 
 export async function fetchLifehacks(): Promise<Lifehack[]> {
-  // 1) API endpoint orqali (VITE env & RLS dan xoli)
+  const cachedRows = cacheGet<any[]>("lifehacks", 5 * 60 * 1000);
+  if (cachedRows && cachedRows.length) {
+    return cachedRows.map(normalizeRow);
+  }
+
+  let rows: any[] = [];
+
   try {
-    const res = await fetch(`${API_BASE}/api/lifehacks`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/api/lifehacks`);
     if (res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
-        return json.data.map(normalizeRow);
+        rows = json.data;
       }
     }
   } catch {
     // ignore
   }
 
-  // 2) Fallback — Client Supabase
-  if (!supabase) {
-    return MOCK_LIFEHACKS;
-  }
+  if (!rows.length && supabase) {
+    try {
+      const { data } = await supabase
+        .from("lifehacks")
+        .select("*")
+        .eq("is_published", true)
+        .order("id", { ascending: true })
+        .limit(500);
 
-  try {
-    const { data, error } = await supabase
-      .from("lifehacks")
-      .select("*")
-      .eq("is_published", true)
-      .order("id", { ascending: true })
-      .limit(500);
-
-    if (error || !data || data.length === 0) {
-      return MOCK_LIFEHACKS;
+      if (data && data.length > 0) {
+        rows = data;
+      }
+    } catch {
+      // ignore
     }
-
-    return data.map(normalizeRow);
-  } catch {
-    return MOCK_LIFEHACKS;
   }
+
+  if (rows.length > 0) {
+    cacheSet("lifehacks", rows);
+    return rows.map(normalizeRow);
+  }
+
+  return MOCK_LIFEHACKS;
 }
 
 export function getLifehackCategories(lifehacks: Lifehack[]): string[] {

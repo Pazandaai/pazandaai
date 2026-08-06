@@ -2,7 +2,7 @@ import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../../context/AppContext";
-import { uploadImage } from "../../lib/api";
+import { API_BASE, uploadImage } from "../../lib/api";
 import { hapticNotification } from "../../lib/telegram";
 import ModalShell from "../ui/ModalShell";
 
@@ -17,6 +17,14 @@ function PremiumInner() {
   const [done, setDone] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [card, setCard] = useState<{ card_number?: string; card_holder?: string } | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/payment-card`)
+      .then((r) => r.json())
+      .then((j) => { if (j?.ok && j.value) setCard(j.value); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -80,6 +88,14 @@ function PremiumInner() {
             )}
           </p>
         </div>
+
+        {card?.card_number ? (
+          <div className="rounded-3xl bg-slate-900 p-4 text-white shadow-md">
+            <p className="text-[10px] font-bold text-slate-400">{format("To'lov kartasi")}</p>
+            <p className="mt-1 font-mono text-base font-extrabold tracking-wider">{card.card_number}</p>
+            {card.card_holder ? <p className="mt-0.5 text-xs text-slate-300">{card.card_holder}</p> : null}
+          </div>
+        ) : null}
 
         <input
           ref={inputRef}

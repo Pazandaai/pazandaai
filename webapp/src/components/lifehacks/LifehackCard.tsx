@@ -6,6 +6,7 @@ import { hapticNotification } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Lifehack } from "../../types/lifehack";
 import RichText from "../ui/RichText";
+import ZoomableImage from "../ui/ZoomableImage";
 
 export default function LifehackCard({ lifehack }: { lifehack: Lifehack }) {
   const { format, t } = useApp();
@@ -67,8 +68,8 @@ export default function LifehackCard({ lifehack }: { lifehack: Lifehack }) {
             className="overflow-hidden"
           >
             {lifehack.image_url ? (
-              <div className="mt-3 overflow-hidden rounded-2xl">
-                <img src={lifehack.image_url} alt={format(lifehack.title)} loading="lazy" className="aspect-[16/9] w-full object-cover" />
+              <div className="mt-3">
+                <ZoomableImage src={lifehack.image_url} alt={format(lifehack.title)} className="aspect-[16/9] rounded-2xl" />
               </div>
             ) : null}
             <div className="mt-3">

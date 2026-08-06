@@ -1,4 +1,3 @@
-import { Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -11,8 +10,10 @@ import { fetchLifehacks } from "../api/lifehacks";
 import { fetchRecipes } from "../api/recipes";
 import BannerCarousel from "../components/home/BannerCarousel";
 import LifehackCard from "../components/lifehacks/LifehackCard";
+import LifehackModal from "../components/lifehacks/LifehackModal";
 import RecipeCard from "../components/recipes/RecipeCard";
 import RecipeModal from "../components/recipes/RecipeModal";
+import GlobalSearch from "../components/search/GlobalSearch";
 import { useApp } from "../context/AppContext";
 import { useSession } from "../hooks/useSession";
 import type { Recipe } from "../types";
@@ -50,8 +51,8 @@ export default function HomePage() {
   const [recipesLoading, setRecipesLoading] = useState(true);
   const [lifehacks, setLifehacks] = useState<Lifehack[]>([]);
   const [lifehacksLoading, setLifehacksLoading] = useState(true);
-  const [searchValue, setSearchValue] = useState("");
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [selectedLifehack, setSelectedLifehack] = useState<Lifehack | null>(null);
 
   useEffect(() => {
     fetchHomeBanner()
@@ -80,17 +81,9 @@ export default function HomePage() {
     [lifehacks, todayKey],
   );
 
-  // ✅ LIVE qidiruv takliflari
-  const suggestions = useMemo(() => {
-    const q = searchValue.trim().toLowerCase();
-    if (q.length < 2) return [];
-    return recipes
-      .filter((r) => r.title.toLowerCase().includes(q))
-      .slice(0, 5);
-  }, [searchValue, recipes]);
-
-  const submitSearch = () => {
-    setRecipesSearchQuery(searchValue.trim());
+  const submitSearch = (q: string) => {
+    if (!q) return;
+    setRecipesSearchQuery(q);
     setActiveTab("recipes");
   };
 
@@ -108,49 +101,14 @@ export default function HomePage() {
         </motion.div>
       )}
 
-      {/* ✅ Qidiruv + live dropdown */}
-      <div className="relative">
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.05 }}
-          className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
-        >
-          <Search size={17} className="text-slate-400" />
-          <input
-            value={searchValue}
-            onChange={(event) => setSearchValue(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Enter") submitSearch(); }}
-            placeholder={format("Retsept qidirish...")}
-            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-          />
-          <button
-            onClick={submitSearch}
-            className="rounded-2xl bg-[#DB2777] px-4 py-2 text-xs font-extrabold text-white active:scale-95"
-          >
-            {format("Qidirish")}
-          </button>
-        </motion.div>
-
-        {suggestions.length > 0 ? (
-          <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
-            {suggestions.map((recipe) => (
-              <button
-                key={recipe.id}
-                onClick={() => { setSelectedRecipe(recipe); setSearchValue(""); }}
-                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left active:bg-slate-50"
-              >
-                <span className="line-clamp-1 text-sm font-semibold text-slate-800">
-                  {format(recipe.title)}
-                </span>
-                <span className="shrink-0 text-[10px] font-bold text-slate-400">
-                  {recipe.cook_time_minutes ? `${recipe.cook_time_minutes} ${format("daqiqa")}` : ""}
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+      {/* ✅ Google-uslub Live Qidiruv */}
+      <GlobalSearch
+        recipes={recipes}
+        lifehacks={lifehacks}
+        onOpenRecipe={setSelectedRecipe}
+        onOpenLifehack={setSelectedLifehack}
+        onSubmit={submitSearch}
+      />
 
       {!sessionLoading && !isPremium ? (
         <motion.button
@@ -243,6 +201,7 @@ export default function HomePage() {
       </section>
 
       <RecipeModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} />
+      <LifehackModal lifehack={selectedLifehack} onClose={() => setSelectedLifehack(null)} />
     </div>
   );
 }

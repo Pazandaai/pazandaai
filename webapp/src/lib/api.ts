@@ -1,7 +1,7 @@
 import { compressImage } from "./compress";
 import { getInitData } from "./telegram";
 
-const API_BASE = (
+export const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
   (typeof window !== "undefined" && window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"

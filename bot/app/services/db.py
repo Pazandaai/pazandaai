@@ -423,6 +423,12 @@ class SupabaseDB:
             "lifehacks": lifehacks,
         }
 
+    async def get_app_setting(self, key: str) -> Any | None:
+        data = await self._request(
+            "GET", "app_settings", params={"key": f"eq.{key}", "limit": 1}
+        )
+        return data[0].get("value") if data else None
+
     async def health_check(self) -> bool:
         await self._request(
             "GET",

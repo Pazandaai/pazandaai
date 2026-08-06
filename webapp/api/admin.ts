@@ -111,7 +111,6 @@ export default async function handler(
           limit: 50,
         };
         if (search) {
-          // ✅ TUZATISH: telegram_id.eq faqat RAQAM bo'lsa qo'shiladi
           const conds = [
             `username.ilike.*${search}*`,
             `first_name.ilike.*${search}*`,
@@ -177,8 +176,28 @@ export default async function handler(
       }
 
       // =====================
-      // TO'LOVLAR
+      // TO'LOVLAR & PAYMENT CARD
       // =====================
+      case "get_payment_card": {
+        const data = await supabaseFetch("GET", "app_settings", { key: "eq.payment_card", limit: 1 });
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+
+      case "save_payment_card": {
+        const value = {
+          card_number: String(payload?.card_number ?? "").trim(),
+          card_holder: String(payload?.card_holder ?? "").trim(),
+        };
+        const data = await supabaseFetch(
+          "POST",
+          "app_settings",
+          { on_conflict: "key" },
+          { key: "payment_card", value },
+          "resolution=merge-duplicates,return=representation",
+        );
+        return res.status(200).json({ ok: true, data: data?.[0] ?? null });
+      }
+
       case "list_payments": {
         const status = payload?.status ?? "pending";
         const data = await supabaseFetch("GET", "premium_requests", {
@@ -294,7 +313,6 @@ export default async function handler(
         return res.status(200).json({ ok: true, data });
       }
 
-      // ✅ YANGI: to'liq retsept (tahrirlash uchun)
       case "get_recipe": {
         const id = payload?.id;
         if (!id) return res.status(400).json({ ok: false, error: "id required" });
@@ -337,7 +355,6 @@ export default async function handler(
         return res.status(200).json({ ok: true, data });
       }
 
-      // ✅ YANGI: to'liq lifehack (tahrirlash uchun)
       case "get_lifehack": {
         const id = payload?.id;
         if (!id) return res.status(400).json({ ok: false, error: "id required" });
