@@ -750,22 +750,21 @@ function RecipesAdmin() {
 // BANNER ADMIN
 // =========================
 
-interface BannerState {
+export interface BannerSlideState {
+  id: string;
   image_url: string;
   title: string;
   subtitle: string;
+  button_text: string;
+  button_url: string;
   active: boolean;
 }
 
 function BannerAdmin() {
   const { format } = useApp();
 
-  const [banner, setBanner] = useState<BannerState>({
-    image_url: "",
-    title: "",
-    subtitle: "",
-    active: true,
-  });
+  const [slides, setSlides] = useState<BannerSlideState[]>([]);
+  const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -787,12 +786,48 @@ function BannerAdmin() {
         const value = row?.value ?? null;
 
         if (value) {
-          setBanner({
-            image_url: value.image_url ?? "",
-            title: value.title ?? "",
-            subtitle: value.subtitle ?? "",
-            active: value.active !== false,
-          });
+          let parsedSlides: BannerSlideState[] = [];
+
+          if (Array.isArray(value)) {
+            parsedSlides = value.map((item, idx) => ({
+              id: item.id || `slide-${idx}-${Date.now()}`,
+              image_url: item.image_url || "",
+              title: item.title || "",
+              subtitle: item.subtitle || "",
+              button_text: item.button_text || "",
+              button_url: item.button_url || "",
+              active: item.active !== false,
+            }));
+          } else if (typeof value === "object") {
+            if (Array.isArray(value.slides)) {
+              parsedSlides = value.slides.map((item: any, idx: number) => ({
+                id: item.id || `slide-${idx}-${Date.now()}`,
+                image_url: item.image_url || "",
+                title: item.title || "",
+                subtitle: item.subtitle || "",
+                button_text: item.button_text || "",
+                button_url: item.button_url || "",
+                active: item.active !== false,
+              }));
+            } else if (value.image_url || value.title) {
+              parsedSlides = [
+                {
+                  id: value.id || "slide-0",
+                  image_url: value.image_url || "",
+                  title: value.title || "",
+                  subtitle: value.subtitle || "",
+                  button_text: value.button_text || "",
+                  button_url: value.button_url || "",
+                  active: value.active !== false,
+                },
+              ];
+            }
+          }
+
+          setSlides(parsedSlides);
+          if (parsedSlides.length > 0) {
+            setActiveSlideId(parsedSlides[0].id);
+          }
         }
       } catch (err: any) {
         setError(err?.message ?? format("Bannerni yuklashda xatolik"));
@@ -804,14 +839,62 @@ function BannerAdmin() {
     load();
   }, [format]);
 
+  const addSlide = () => {
+    const newSlide: BannerSlideState = {
+      id: `slide-${Date.now()}`,
+      image_url: "",
+      title: "Yangi Banner",
+      subtitle: "Banner matni va tavsifi",
+      button_text: "",
+      button_url: "",
+      active: true,
+    };
+
+    setSlides((prev) => [...prev, newSlide]);
+    setActiveSlideId(newSlide.id);
+  };
+
+  const updateSlide = (id: string, patch: Partial<BannerSlideState>) => {
+    setSlides((prev) =>
+      prev.map((slide) => (slide.id === id ? { ...slide, ...patch } : slide)),
+    );
+  };
+
+  const deleteSlide = (id: string) => {
+    if (slides.length <= 1) {
+      if (!window.confirm(format("Oxirgi bannerni o'chirmoqchimisiz?"))) return;
+    }
+
+    setSlides((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      if (activeSlideId === id && next.length > 0) {
+        setActiveSlideId(next[0].id);
+      }
+      return next;
+    });
+  };
+
+  const moveSlide = (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= slides.length) return;
+
+    setSlides((prev) => {
+      const copy = [...prev];
+      const temp = copy[index];
+      copy[index] = copy[targetIndex];
+      copy[targetIndex] = temp;
+      return copy;
+    });
+  };
+
   const save = async () => {
     setSaving(true);
     setMessage(null);
     setError(null);
 
     try {
-      await adminRequest("save_banner", { value: banner });
-      setMessage(format("✅ Banner saqlandi"));
+      await adminRequest("save_banner", { value: slides });
+      setMessage(format("✅ Karusel bannerlari muvaffaqiyatli saqlandi!"));
     } catch (err: any) {
       setError(err?.message ?? format("Saqlashda xatolik"));
     } finally {
@@ -823,53 +906,196 @@ function BannerAdmin() {
     return <div className="h-48 animate-pulse rounded-3xl bg-slate-200/70" />;
   }
 
+  const selectedSlide = slides.find((s) => s.id === activeSlideId) || slides[0];
+
   return (
-    <div className="space-y-3 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
-      <ImageUploader
-        value={banner.image_url}
-        onChange={(url) => setBanner((prev) => ({ ...prev, image_url: url }))}
-      />
+    <div className="space-y-4">
+      {/* Header action bar */}
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-display text-base font-extrabold text-slate-900">
+          {format(`Bannerlar (${slides.length} ta)`)}
+        </h3>
 
-      <input
-        value={banner.title}
-        onChange={(event) =>
-          setBanner((prev) => ({ ...prev, title: event.target.value }))
-        }
-        placeholder={format("Banner sarlavhasi")}
-        className={inputClass}
-      />
+        <button
+          onClick={addSlide}
+          className="flex items-center gap-1.5 rounded-2xl bg-[#DB2777] px-3 py-2 text-xs font-extrabold text-white shadow active:scale-95"
+        >
+          <Plus size={15} />
+          <span>{format("Banner qo'shish")}</span>
+        </button>
+      </div>
 
-      <input
-        value={banner.subtitle}
-        onChange={(event) =>
-          setBanner((prev) => ({ ...prev, subtitle: event.target.value }))
-        }
-        placeholder={format("Banner matni")}
-        className={inputClass}
-      />
+      {/* Tabs / Slide Selector Pill Bar */}
+      {slides.length > 0 ? (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {slides.map((slide, idx) => {
+            const isSelected = slide.id === selectedSlide?.id;
+            return (
+              <button
+                key={slide.id}
+                onClick={() => setActiveSlideId(slide.id)}
+                className={`flex shrink-0 items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-bold transition-all ${
+                  isSelected
+                    ? "border-[#DB2777] bg-[#DB2777] text-white shadow-md"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <span>{format(`Banner #${idx + 1}`)}</span>
+                {!slide.active ? (
+                  <span className="rounded bg-slate-200 px-1 text-[10px] text-slate-600">
+                    {format("Nofaol")}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
-      <label className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
-        <input
-          type="checkbox"
-          checked={banner.active}
-          onChange={(event) =>
-            setBanner((prev) => ({ ...prev, active: event.target.checked }))
-          }
-        />
+      {/* Active Slide Form */}
+      {selectedSlide ? (
+        <div className="space-y-3.5 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <span className="text-xs font-extrabold text-slate-500">
+              {format(`Slide Tahriri`)}
+            </span>
 
-        <span className="text-sm font-semibold text-slate-700">
-          {format("Faol")}
-        </span>
-      </label>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() =>
+                  moveSlide(
+                    slides.findIndex((s) => s.id === selectedSlide.id),
+                    "up",
+                  )
+                }
+                title={format("Yuqoriga surish")}
+                className="rounded-xl bg-slate-100 p-2 text-xs font-bold text-slate-700 hover:bg-slate-200"
+              >
+                ↑
+              </button>
+
+              <button
+                onClick={() =>
+                  moveSlide(
+                    slides.findIndex((s) => s.id === selectedSlide.id),
+                    "down",
+                  )
+                }
+                title={format("Pastga surish")}
+                className="rounded-xl bg-slate-100 p-2 text-xs font-bold text-slate-700 hover:bg-slate-200"
+              >
+                ↓
+              </button>
+
+              <button
+                onClick={() => deleteSlide(selectedSlide.id)}
+                title={format("Bannerni o'chirish")}
+                className="flex items-center gap-1 rounded-xl bg-red-50 px-2.5 py-1.5 text-xs font-bold text-red-500 hover:bg-red-100"
+              >
+                <Trash2 size={14} />
+                <span>{format("O'chirish")}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* R2 Image Uploader */}
+          <div>
+            <label className="mb-1 block text-xs font-bold text-slate-700">
+              {format("Rasm (Cloudflare R2)")}
+            </label>
+            <ImageUploader
+              value={selectedSlide.image_url}
+              onChange={(url) => updateSlide(selectedSlide.id, { image_url: url })}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-bold text-slate-700">
+              {format("Sarlavha (Title)")}
+            </label>
+            <input
+              value={selectedSlide.title}
+              onChange={(event) =>
+                updateSlide(selectedSlide.id, { title: event.target.value })
+              }
+              placeholder={format("Masalan: Kun retsepti yoki Pazanda AI")}
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-bold text-slate-700">
+              {format("Tavsif (Subtitle)")}
+            </label>
+            <input
+              value={selectedSlide.subtitle}
+              onChange={(event) =>
+                updateSlide(selectedSlide.id, { subtitle: event.target.value })
+              }
+              placeholder={format("Masalan: Oshxona sirlari va maslahatlari")}
+              className={inputClass}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-xs font-bold text-slate-700">
+                {format("Tugma matni (Ixtiyoriy)")}
+              </label>
+              <input
+                value={selectedSlide.button_text}
+                onChange={(event) =>
+                  updateSlide(selectedSlide.id, { button_text: event.target.value })
+                }
+                placeholder={format("Masalan: Batafsil")}
+                className={inputClass}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-bold text-slate-700">
+                {format("Tugma havolasi (URL)")}
+              </label>
+              <input
+                value={selectedSlide.button_url}
+                onChange={(event) =>
+                  updateSlide(selectedSlide.id, { button_url: event.target.value })
+                }
+                placeholder={format("https://t.me/...")}
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2.5 rounded-2xl bg-slate-50 px-3 py-3">
+            <input
+              type="checkbox"
+              checked={selectedSlide.active}
+              onChange={(event) =>
+                updateSlide(selectedSlide.id, { active: event.target.checked })
+              }
+              className="h-4 w-4 rounded border-slate-300 text-[#DB2777] focus:ring-[#DB2777]"
+            />
+
+            <span className="text-sm font-semibold text-slate-700">
+              {format("Ushbu banner faol (Bosh sahifada ko'rinadi)")}
+            </span>
+          </label>
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+          {format("Hozircha bannerlar yo'q. 'Banner qo'shish' tugmasini bosing.")}
+        </div>
+      )}
 
       {message ? (
-        <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-600">
+        <div className="rounded-2xl bg-emerald-50 px-3.5 py-2.5 text-xs font-bold text-emerald-600">
           {message}
         </div>
       ) : null}
 
       {error ? (
-        <div className="rounded-2xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
+        <div className="rounded-2xl bg-red-50 px-3.5 py-2.5 text-xs font-bold text-red-600">
           {error}
         </div>
       ) : null}
@@ -877,9 +1103,11 @@ function BannerAdmin() {
       <button
         onClick={save}
         disabled={saving}
-        className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white disabled:opacity-40"
+        className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white shadow-lg active:scale-98 disabled:opacity-40"
       >
-        {saving ? format("Saqlanmoqda...") : format("Bannerni saqlash")}
+        {saving
+          ? format("Saqlanmoqda...")
+          : format("Barcha karusel bannerlarini saqlash")}
       </button>
     </div>
   );

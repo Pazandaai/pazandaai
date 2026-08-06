@@ -1,9 +1,10 @@
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchHomeBanner, type HomeBanner } from "../api/home";
+import { fetchHomeBanner, type HomeBannerSlide } from "../api/home";
 import { fetchLifehacks } from "../api/lifehacks";
 import { fetchRecipes } from "../api/recipes";
+import BannerCarousel from "../components/home/BannerCarousel";
 import LifehackCard from "../components/lifehacks/LifehackCard";
 import RecipeCard from "../components/recipes/RecipeCard";
 import RecipeModal from "../components/recipes/RecipeModal";
@@ -28,7 +29,7 @@ export default function HomePage() {
 
   const { isPremium, loading: sessionLoading } = useSession();
 
-  const [banner, setBanner] = useState<HomeBanner | null>(null);
+  const [slides, setSlides] = useState<HomeBannerSlide[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [lifehacks, setLifehacks] = useState<Lifehack[]>([]);
 
@@ -41,13 +42,13 @@ export default function HomePage() {
       setLoading(true);
 
       try {
-        const [bannerData, recipeData, lifehackData] = await Promise.all([
+        const [bannerSlides, recipeData, lifehackData] = await Promise.all([
           fetchHomeBanner(),
           fetchRecipes(),
           fetchLifehacks(),
         ]);
 
-        setBanner(bannerData);
+        setSlides(bannerSlides);
         setRecipes(recipeData);
         setLifehacks(lifehackData);
       } catch {
@@ -75,50 +76,14 @@ export default function HomePage() {
     setActiveTab("recipes");
   };
 
-  const showBanner = banner && banner.active !== false;
-
   return (
     <div className="space-y-5">
-      {/* Banner */}
+      {/* Banner Carousel */}
       {loading ? (
         <div className="aspect-[21/9] w-full animate-pulse rounded-3xl bg-slate-200/70" />
-      ) : showBanner ? (
-        <div className="relative aspect-[21/9] w-full overflow-hidden rounded-3xl bg-gradient-to-br from-[#DB2777] to-rose-400 soft-shadow">
-          {banner.image_url ? (
-            <img
-              src={banner.image_url}
-              alt={format(banner.title || "Pazanda AI")}
-              className="h-full w-full object-cover"
-            />
-          ) : null}
-
-          <div className="banner-overlay absolute inset-0" />
-
-          <div className="absolute inset-x-0 bottom-0 p-4">
-            <div className="flex items-center gap-2">
-              {isPremium ? (
-                <span className="gold-gradient flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold text-slate-900 shadow">
-                  👑 Premium
-                </span>
-              ) : null}
-
-              <span className="rounded-full bg-white/20 px-2.5 py-1 text-[10px] font-bold text-white backdrop-blur">
-                {format("Bugun nima pishiramiz?")}
-              </span>
-            </div>
-
-            <h2 className="mt-2 font-display text-xl font-extrabold leading-6 text-white">
-              {format(banner.title || "Pazanda AI")}
-            </h2>
-
-            {banner.subtitle ? (
-              <p className="mt-1 line-clamp-1 text-xs font-medium text-white/85">
-                {format(banner.subtitle)}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      ) : (
+        <BannerCarousel slides={slides} isPremium={isPremium} />
+      )}
 
       {/* Search */}
       <div className="flex items-center gap-2 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -146,7 +111,7 @@ export default function HomePage() {
       {!sessionLoading && !isPremium ? (
         <button
           onClick={() => openModal("premium")}
-          className="flex w-full items-center justify-between gap-3 rounded-3xl bg-slate-900 p-4 text-left"
+          className="flex w-full items-center justify-between gap-3 rounded-3xl bg-slate-900 p-4 text-left shadow-md"
         >
           <div>
             <p className="font-display text-sm font-extrabold text-white">
