@@ -12,6 +12,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
   const { format } = useApp();
   const [index, setIndex] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
   const touchX = useRef<number | null>(null);
   const count = slides.length;
 
@@ -19,7 +20,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
     if (count <= 1) return;
     const id = setInterval(() => {
       setIndex((prev) => (prev + 1) % count);
-      setImageLoaded(false); // yangi slide uchun reset
+      setImageLoaded(false);
     }, 5000);
     return () => clearInterval(id);
   }, [count]);
@@ -28,9 +29,16 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
     if (index >= count) setIndex(0);
   }, [count, index]);
 
-  if (count === 0) return null;
+  const slide = count > 0 ? slides[Math.min(index, count - 1)] : null;
 
-  const slide = slides[Math.min(index, count - 1)];
+  useEffect(() => {
+    if (imgRef.current && imgRef.current.complete) {
+      setImageLoaded(true);
+    }
+  }, [slide?.image_url]);
+
+  if (!slide) return null;
+
   const linkUrl = slide.link_url || slide.button_url;
   const linkText = slide.link_text || slide.button_text || "Batafsil";
 
@@ -57,22 +65,20 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
       <AnimatePresence mode="wait">
         {slide.image_url ? (
           <motion.img
-            key={slide.id}
+            ref={imgRef}
+            key={slide.id || slide.image_url}
             src={slide.image_url}
             alt={format(slide.title || "Pazanda AI")}
-            // OPTIMIZATSIYA: eager loading + high priority
             loading="eager"
             {...({ fetchpriority: "high" } as any)}
             decoding="async"
             onLoad={() => setImageLoaded(true)}
-            initial={{ opacity: 0, scale: 1.05 }}
-            animate={{
-              opacity: imageLoaded ? 1 : 0,
-              scale: imageLoaded ? 1 : 1.05,
-            }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            onError={() => setImageLoaded(true)}
+            initial={{ opacity: 0, scale: 1.03 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
             transition={{
-              duration: 0.5,
+              duration: 0.4,
               ease: [0.25, 0.46, 0.45, 0.94],
             }}
             className="absolute inset-0 h-full w-full object-cover"
@@ -80,17 +86,17 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
         ) : null}
       </AnimatePresence>
 
-      {/* Skeleton while image loading */}
+      {/* Skeleton background while image loading */}
       {!imageLoaded && slide.image_url ? (
-        <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200" />
+        <div className="absolute inset-0 animate-pulse bg-slate-800/40" />
       ) : null}
 
       <div className="banner-overlay absolute inset-0" />
 
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
+        transition={{ duration: 0.4, delay: 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
         className="absolute inset-x-0 bottom-0 p-4"
       >
         <h2 className="font-display text-xl font-extrabold leading-6 text-white drop-shadow-sm">
@@ -136,7 +142,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
           <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/30 px-2.5 py-1 backdrop-blur">
             {slides.map((s, i) => (
               <motion.button
-                key={s.id}
+                key={s.id || i}
                 onClick={() => setIndex(i)}
                 aria-label={`Slayd ${i + 1}`}
                 animate={{
