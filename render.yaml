@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: pazanda-bot
+    env: python
+    rootDir: bot
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app/main.py
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        value: "8544023815"
+      - key: WEBAPP_URL
+        value: https://pazandaai.vercel.app
+      - key: MODE
+        value: polling

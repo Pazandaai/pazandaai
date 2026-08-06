@@ -1,5 +1,10 @@
 import asyncio
 import logging
+import os
+import sys
+
+# Ensure root app directory is in sys.path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
