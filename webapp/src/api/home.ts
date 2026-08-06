@@ -1,56 +1,67 @@
 import { supabase } from "../lib/supabase";
 
-export interface HomeBannerSlide {
+export interface BannerSlide {
   id: string;
   image_url?: string;
   title?: string;
   subtitle?: string;
-  button_text?: string;
+  link_url?: string;
+  link_text?: string;
   button_url?: string;
+  button_text?: string;
   active?: boolean;
 }
 
-export function parseBannerSlides(data: any): HomeBannerSlide[] {
-  if (!data) return [];
+export interface HomeBanner {
+  active?: boolean;
+  slides?: BannerSlide[];
+  image_url?: string;
+  title?: string;
+  subtitle?: string;
+}
 
-  if (Array.isArray(data)) {
-    return data.map((item, index) => ({
-      id: item.id || `slide-${index}-${Date.now()}`,
-      image_url: item.image_url || "",
-      title: item.title || "",
-      subtitle: item.subtitle || "",
-      button_text: item.button_text || "",
-      button_url: item.button_url || "",
-      active: item.active !== false,
-    }));
+export function normalizeBanner(banner: any): BannerSlide[] {
+  if (!banner) return [];
+
+  if (Array.isArray(banner)) {
+    return banner
+      .map((item, idx) => ({
+        id: item.id || `slide-${idx}`,
+        image_url: item.image_url || "",
+        title: item.title || "",
+        subtitle: item.subtitle || "",
+        link_url: item.link_url || item.button_url || "",
+        link_text: item.link_text || item.button_text || "",
+        active: item.active !== false,
+      }))
+      .filter((s) => s.active !== false);
   }
 
-  if (typeof data === "object") {
-    if (Array.isArray(data.slides)) {
-      return parseBannerSlides(data.slides);
+  if (typeof banner === "object") {
+    if (Array.isArray(banner.slides)) {
+      return normalizeBanner(banner.slides);
     }
-    if (data.image_url || data.title) {
+
+    if (banner.image_url || banner.title) {
       return [
         {
-          id: data.id || "slide-0",
-          image_url: data.image_url || "",
-          title: data.title || "",
-          subtitle: data.subtitle || "",
-          button_text: data.button_text || "",
-          button_url: data.button_url || "",
-          active: data.active !== false,
+          id: banner.id || "legacy",
+          image_url: banner.image_url ?? "",
+          title: banner.title ?? "",
+          subtitle: banner.subtitle ?? "",
+          link_url: banner.link_url || banner.button_url || "",
+          link_text: banner.link_text || banner.button_text || "",
+          active: banner.active !== false,
         },
-      ];
+      ].filter((s) => s.active !== false);
     }
   }
 
   return [];
 }
 
-export async function fetchHomeBanner(): Promise<HomeBannerSlide[]> {
-  if (!supabase) {
-    return [];
-  }
+export async function fetchHomeBanner(): Promise<HomeBanner | null> {
+  if (!supabase) return null;
 
   try {
     const { data, error } = await supabase
@@ -59,12 +70,10 @@ export async function fetchHomeBanner(): Promise<HomeBannerSlide[]> {
       .eq("key", "home_banner")
       .maybeSingle();
 
-    if (error || !data?.value) {
-      return [];
-    }
+    if (error) return null;
 
-    return parseBannerSlides(data.value);
+    return (data?.value as HomeBanner) ?? null;
   } catch {
-    return [];
+    return null;
   }
 }

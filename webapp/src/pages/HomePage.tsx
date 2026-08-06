@@ -1,7 +1,12 @@
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchHomeBanner, type HomeBannerSlide } from "../api/home";
+import {
+  fetchHomeBanner,
+  normalizeBanner,
+  type BannerSlide,
+  type HomeBanner,
+} from "../api/home";
 import { fetchLifehacks } from "../api/lifehacks";
 import { fetchRecipes } from "../api/recipes";
 import BannerCarousel from "../components/home/BannerCarousel";
@@ -29,7 +34,7 @@ export default function HomePage() {
 
   const { isPremium, loading: sessionLoading } = useSession();
 
-  const [slides, setSlides] = useState<HomeBannerSlide[]>([]);
+  const [banner, setBanner] = useState<HomeBanner | null>(null);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [lifehacks, setLifehacks] = useState<Lifehack[]>([]);
 
@@ -42,13 +47,13 @@ export default function HomePage() {
       setLoading(true);
 
       try {
-        const [bannerSlides, recipeData, lifehackData] = await Promise.all([
+        const [bannerData, recipeData, lifehackData] = await Promise.all([
           fetchHomeBanner(),
           fetchRecipes(),
           fetchLifehacks(),
         ]);
 
-        setSlides(bannerSlides);
+        setBanner(bannerData);
         setRecipes(recipeData);
         setLifehacks(lifehackData);
       } catch {
@@ -60,6 +65,19 @@ export default function HomePage() {
 
     load();
   }, []);
+
+  const slides = useMemo(() => normalizeBanner(banner), [banner]);
+
+  // Banner HECH QACHON yo'qolmaydi — fallback slayd
+  const effectiveSlides: BannerSlide[] = slides.length
+    ? slides
+    : [
+        {
+          id: "default",
+          title: "Pazanda AI",
+          subtitle: "Oilaviy oshxona yordamchisi",
+        },
+      ];
 
   const dailyRecipes = useMemo(
     () => randomItems(recipes, 2),
@@ -82,7 +100,7 @@ export default function HomePage() {
       {loading ? (
         <div className="aspect-[21/9] w-full animate-pulse rounded-3xl bg-slate-200/70" />
       ) : (
-        <BannerCarousel slides={slides} isPremium={isPremium} />
+        <BannerCarousel slides={effectiveSlides} />
       )}
 
       {/* Search */}
