@@ -5,6 +5,15 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+import os
+
+DOTENV_PATHS = (
+    os.path.join(os.path.dirname(__file__), "..", ".env"),
+    "bot/.env",
+    ".env",
+)
+
+
 class Settings(BaseSettings):
     """
     Pazanda AI bot sozlamalari.
@@ -14,7 +23,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=DOTENV_PATHS,
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
