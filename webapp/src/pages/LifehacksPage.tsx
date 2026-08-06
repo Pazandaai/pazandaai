@@ -4,9 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchLifehacks, getLifehackCategories } from "../api/lifehacks";
 import LifehackCard from "../components/lifehacks/LifehackCard";
 import { useApp } from "../context/AppContext";
-import { registerBack } from "../lib/back";
+import { registerBack, runBack } from "../lib/back";
 import { getCategoryEmoji, normalizeText } from "../lib/lifehack-utils";
-import { hideBackButton, showBackButton } from "../lib/telegram";
 import type { Lifehack } from "../types/lifehack";
 
 const FOLDER_GRADIENTS = [
@@ -28,15 +27,6 @@ export default function LifehacksPage() {
   useEffect(() => {
     fetchLifehacks().then((d) => { setLifehacks(d); setLoading(false); }).catch(() => setLoading(false));
   }, []);
-
-  useEffect(() => {
-    if (selectedCategory) {
-      showBackButton();
-      return () => hideBackButton();
-    }
-    hideBackButton();
-    return undefined;
-  }, [selectedCategory]);
 
   useEffect(() => {
     return registerBack(() => {
@@ -112,7 +102,7 @@ export default function LifehacksPage() {
         <section className="space-y-3">
           {selectedCategory ? (
             <div className="flex items-center gap-2">
-              <button onClick={() => setSelectedCategory(null)} aria-label={t("back")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm">
+              <button onClick={() => { runBack() || setSelectedCategory(null); }} aria-label={t("back")} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm">
                 <ChevronLeft size={18} />
               </button>
               <span className="text-xl">{getCategoryEmoji(selectedCategory)}</span>

@@ -10,7 +10,6 @@ import PremiumModal from "./components/modals/PremiumModal";
 import TimerModal from "./components/modals/TimerModal";
 import { AppProvider, useApp } from "./context/AppContext";
 import { registerBack } from "./lib/back";
-import { hideBackButton } from "./lib/telegram";
 import { useBackGuard } from "./lib/useBackGuard";
 import HomePage from "./pages/HomePage";
 import LifehacksPage from "./pages/LifehacksPage";
@@ -23,17 +22,14 @@ function AppContent() {
   useBackGuard();
 
   useEffect(() => {
-    hideBackButton();
-  }, [activeTab]);
-
-  useEffect(() => {
+    const priority = activeTab !== "home" ? 20 : 10;
     return registerBack(() => {
       if (activeTab !== "home") {
         setActiveTab("home");
         return true;
       }
       return false;
-    }, 10);
+    }, priority);
   }, [activeTab, setActiveTab]);
 
   return (

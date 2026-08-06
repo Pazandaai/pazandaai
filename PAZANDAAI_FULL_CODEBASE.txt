@@ -1260,6 +1260,7 @@ async def toggle_language(callback: CallbackQuery) -> None:
 
 `python
 import logging
+import time
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
@@ -1273,9 +1274,34 @@ from app.texts.strings import t
 settings = get_settings()
 router = Router()
 
+START_WINDOW = 120        # 2 daqiqa
+START_MAX = 6             # 6 marta ketma-ket
+START_BLOCK_SECONDS = 4 * 3600  # 4 soat
+
+_start_log: dict[int, list[float]] = {}
+_start_blocked: dict[int, float] = {}
+
+
+def is_start_spam(user_id: int) -> bool:
+    now = time.monotonic()
+    until = _start_blocked.get(user_id)
+    if until and now < until:
+        return True
+    log = [t_item for t_item in _start_log.get(user_id, []) if now - t_item < START_WINDOW]
+    log.append(now)
+    _start_log[user_id] = log
+    if len(log) >= START_MAX:
+        _start_blocked[user_id] = now + START_BLOCK_SECONDS
+        _start_log[user_id] = []
+        return True
+    return False
+
 
 @router.message(CommandStart())
 async def start(message: Message) -> None:
+    if is_start_spam(message.from_user.id):
+        return
+
     try:
         user = await ensure_user(message.from_user)
         language = (user.get("language") if isinstance(user, dict) else None) or "latn"
@@ -8285,6 +8311,21 @@ export default async function handler(
         return res.status(200).json({ ok: true, data: data?.[0] ?? null });
       }
 
+      case "extend_premium": {
+        const targetId = payload?.telegram_id;
+        const days = payload?.days ?? 30;
+        if (!targetId) return res.status(400).json({ ok: false, error: "telegram_id required" });
+        const rows = await supabaseFetch("GET", "users", { telegram_id: `eq.${targetId}`, limit: 1 });
+        const u = rows?.[0];
+        const base = u?.premium_until && new Date(u.premium_until) > new Date()
+          ? new Date(u.premium_until)
+          : new Date();
+        base.setDate(base.getDate() + days);
+        await supabaseFetch("PATCH", "users", { telegram_id: `eq.${targetId}` },
+          { is_premium: true, premium_until: base.toISOString() }, "return=representation");
+        return res.status(200).json({ ok: true, until: base.toISOString() });
+      }
+
       case "list_payments": {
         const status = payload?.status ?? "pending";
         const data = await supabaseFetch("GET", "premium_requests", {
@@ -8590,10 +8631,14 @@ export default async function handler(
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guardPublic } from "./_lib/guard.js";
 import { supabaseFetch } from "./_lib/supabase.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const g = guardPublic(req);
+  if (!g.ok) return res.status(g.status).json({ ok: false, error: g.error });
+
   try {
     const data = await supabaseFetch("GET", "app_settings", { key: "eq.category_images", limit: 1 });
     res.setHeader("Cache-Control", "public, s-maxage=60");
@@ -8611,6 +8656,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guardPublic } from "./_lib/guard.js";
 import { supabaseFetch } from "./_lib/supabase.js";
 
 export default async function handler(
@@ -8620,6 +8666,9 @@ export default async function handler(
   if (req.method !== "GET") {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
+
+  const g = guardPublic(req);
+  if (!g.ok) return res.status(g.status).json({ ok: false, error: g.error });
 
   try {
     const data = await supabaseFetch("GET", "lifehacks", {
@@ -8650,13 +8699,17 @@ export default async function handler(
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guardPublic } from "./_lib/guard.js";
 import { supabaseFetch } from "./_lib/supabase.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const g = guardPublic(req);
+  if (!g.ok) return res.status(g.status).json({ ok: false, error: g.error });
+
   try {
     const data = await supabaseFetch("GET", "app_settings", { key: "eq.payment_card", limit: 1 });
-    res.setHeader("Cache-Control", "public, s-maxage=60");
+    res.setHeader("Cache-Control", "public, s-maxage=300");
     return res.status(200).json({ ok: true, value: data?.[0]?.value ?? null });
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error?.message ?? "Server error" });
@@ -8671,10 +8724,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guardPublic } from "./_lib/guard.js";
 import { supabaseFetch } from "./_lib/supabase.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+  const g = guardPublic(req);
+  if (!g.ok) return res.status(g.status).json({ ok: false, error: g.error });
+
   try {
     const data = await supabaseFetch("GET", "app_settings", { key: "eq.product_catalog", limit: 1 });
     res.setHeader("Cache-Control", "public, s-maxage=60");
@@ -8692,6 +8749,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 `typescript
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guardPublic } from "./_lib/guard.js";
 import { supabaseFetch } from "./_lib/supabase.js";
 
 export default async function handler(
@@ -8701,6 +8759,9 @@ export default async function handler(
   if (req.method !== "GET") {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
+
+  const g = guardPublic(req);
+  if (!g.ok) return res.status(g.status).json({ ok: false, error: g.error });
 
   try {
     const data = await supabaseFetch("GET", "recipes", {
@@ -9059,6 +9120,53 @@ export function getEnv(name: string): string | null {
 
 ---
 
+## 📄 webapp/api/_lib/guard.ts
+
+`typescript
+import type { VercelRequest } from "@vercel/node";
+import { requireEnv } from "./env.js";
+import { verifyInitData } from "./telegram.js";
+
+const WINDOW_MS = 60_000;
+const MAX_PER_MIN = 90;
+const hits = new Map<string, number[]>();
+
+function rateLimit(key: string): boolean {
+  const now = Date.now();
+  const arr = (hits.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
+  arr.push(now);
+  hits.set(key, arr);
+  if (hits.size > 5000) hits.clear();
+  return arr.length <= MAX_PER_MIN;
+}
+
+export function guardPublic(req: VercelRequest):
+  | { ok: true; userId: number }
+  | { ok: false; status: number; error: string } {
+  const initData =
+    (req.headers["x-init-data"] as string) ||
+    (req.query.initData as string) ||
+    "";
+  const ip =
+    (req.headers["x-forwarded-for"] as string)?.split(",")[0] ?? "anon";
+
+  if (!initData) {
+    return { ok: false, status: 403, error: "initData required" };
+  }
+  const user = verifyInitData(String(initData), requireEnv("BOT_TOKEN"));
+  if (!user) {
+    return { ok: false, status: 403, error: "Invalid initData" };
+  }
+  if (!rateLimit(`u:${user.id}`) || !rateLimit(`ip:${ip}`)) {
+    return { ok: false, status: 429, error: "Too many requests" };
+  }
+  return { ok: true, userId: user.id };
+}
+
+`
+
+---
+
 ## 📄 webapp/api/_lib/r2.ts
 
 `typescript
@@ -9357,18 +9465,32 @@ import BozorlikModal from "./components/modals/BozorlikModal";
 import PremiumModal from "./components/modals/PremiumModal";
 import TimerModal from "./components/modals/TimerModal";
 import { AppProvider, useApp } from "./context/AppContext";
+import { registerBack } from "./lib/back";
 import { hideBackButton } from "./lib/telegram";
+import { useBackGuard } from "./lib/useBackGuard";
 import HomePage from "./pages/HomePage";
 import LifehacksPage from "./pages/LifehacksPage";
 import ProfilePage from "./pages/ProfilePage";
 import RecipesPage from "./pages/RecipesPage";
 
 function AppContent() {
-  const { activeTab } = useApp();
+  const { activeTab, setActiveTab } = useApp();
+
+  useBackGuard();
 
   useEffect(() => {
     hideBackButton();
   }, [activeTab]);
+
+  useEffect(() => {
+    return registerBack(() => {
+      if (activeTab !== "home") {
+        setActiveTab("home");
+        return true;
+      }
+      return false;
+    }, 10);
+  }, [activeTab, setActiveTab]);
 
   return (
     <div className="min-h-dvh bg-slate-50">
@@ -9619,15 +9741,8 @@ export async function fetchHomeBanner(): Promise<HomeBanner | null> {
 `typescript
 import { supabase } from "../lib/supabase";
 import { cacheGet, cacheSet } from "../lib/cache";
+import { tgHeaders, API_BASE } from "../lib/api";
 import type { Lifehack } from "../types/lifehack";
-
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" &&
-  window.location.hostname.includes("localhost")
-    ? "https://pazandaai.vercel.app"
-    : "")
-).replace(/\/$/, "");
 
 const MOCK_LIFEHACKS: Lifehack[] = [
   {
@@ -9683,7 +9798,9 @@ export async function fetchLifehacks(): Promise<Lifehack[]> {
   let rows: any[] = [];
 
   try {
-    const res = await fetch(`${API_BASE}/api/lifehacks`);
+    const res = await fetch(`${API_BASE}/api/lifehacks`, {
+      headers: tgHeaders(),
+    });
     if (res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
@@ -9741,15 +9858,8 @@ export function getLifehackCategories(lifehacks: Lifehack[]): string[] {
 import { supabase } from "../lib/supabase";
 import { parseIngredientEntry } from "../lib/recipe-utils";
 import { cacheGet, cacheSet } from "../lib/cache";
+import { tgHeaders, API_BASE } from "../lib/api";
 import type { Recipe, RecipeStep } from "../types";
-
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" &&
-  window.location.hostname.includes("localhost")
-    ? "https://pazandaai.vercel.app"
-    : "")
-).replace(/\/$/, "");
 
 function parseJsonArray(value: unknown): any[] {
   if (Array.isArray(value)) return value;
@@ -9783,6 +9893,7 @@ function normalizeRecipe(row: any): Recipe {
     title: row.title ?? "",
     description: row.description ?? undefined,
     image_url: row.image_url ?? undefined,
+    emoji: row.emoji ?? undefined,
     cook_time_minutes: row.cook_time_minutes ?? null,
     difficulty: row.difficulty ?? null,
     servings: row.servings ?? 4,
@@ -9802,7 +9913,9 @@ export async function fetchRecipes(): Promise<Recipe[]> {
   let rows: any[] = [];
 
   try {
-    const res = await fetch(`${API_BASE}/api/recipes`);
+    const res = await fetch(`${API_BASE}/api/recipes`, {
+      headers: tgHeaders(),
+    });
     if (res.ok) {
       const json = await res.json().catch(() => null);
       if (json?.ok && Array.isArray(json.data) && json.data.length > 0) {
@@ -10136,6 +10249,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { useSession } from "../../hooks/useSession";
 import { adminRequest } from "../../lib/api";
+import { registerBack } from "../../lib/back";
 import { DEFAULT_CATEGORIES, DEFAULT_PRODUCTS } from "../../lib/products";
 import ImageUploader from "./ImageUploader";
 
@@ -10212,6 +10326,13 @@ function AdminInner() {
   const { loading, isAdmin } = useSession();
 
   const isUserAdmin = isAdmin || user.id === 8544023815;
+
+  useEffect(() => {
+    return registerBack(() => {
+      closeModal();
+      return true;
+    }, 100);
+  }, [closeModal]);
 
   const [tab, setTab] = useState<
     "stats" | "users" | "payments" | "broadcast" | "recipes" | "banner" | "lifehacks" | "cats" | "products"
@@ -10375,6 +10496,11 @@ function UsersAdmin() {
     load(search || undefined);
   };
 
+  const extendPremium = async (telegramId: number) => {
+    await adminRequest("extend_premium", { telegram_id: telegramId, days: 30 });
+    load(search || undefined);
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
@@ -10382,12 +10508,12 @@ function UsersAdmin() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") load(search || undefined); }}
-          placeholder={format("ID, username yoki ism qidiring...")}
+          placeholder={format("Search ID / @username / ism...")}
           className="h-11 flex-1 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none"
         />
         <button
           onClick={() => load(search || undefined)}
-          className="h-11 rounded-2xl bg-[#DB2777] px-4 text-sm font-bold text-white"
+          className="h-11 rounded-2xl bg-slate-900 px-4 text-sm font-extrabold text-white"
         >
           🔎
         </button>
@@ -10435,10 +10561,10 @@ function UsersAdmin() {
 
                   {u.is_premium ? (
                     <button
-                      onClick={() => revokePremium(u.telegram_id)}
-                      className="rounded-xl bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600"
+                      onClick={() => extendPremium(u.telegram_id)}
+                      className="rounded-xl bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-600"
                     >
-                      {format("Premium olish")}
+                      {format("+30 kun uzaytirish")}
                     </button>
                   ) : (
                     <button
@@ -10448,6 +10574,14 @@ function UsersAdmin() {
                       {format("Premium berish")}
                     </button>
                   )}
+                  {u.is_premium ? (
+                    <button
+                      onClick={() => revokePremium(u.telegram_id)}
+                      className="rounded-xl bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600"
+                    >
+                      {format("Premium olish")}
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -10485,8 +10619,8 @@ function CardSettings() {
   return (
     <div className="space-y-2 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
       <p className="text-xs font-extrabold text-slate-700">{format("💳 To'lov kartasi (bot va ilovada ko'rinadi)")}</p>
-      <input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} placeholder="8600 0000 0000 0000" className={inputClass} />
-      <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Karta egasi ismi" className={inputClass} />
+      <input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} placeholder="8600 0000 0000 0000" className="h-10 w-full rounded-2xl border border-slate-200 px-3 text-sm outline-none" />
+      <input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Karta egasi ismi" className="h-10 w-full rounded-2xl border border-slate-200 px-3 text-sm outline-none" />
       <button onClick={save} className="h-10 w-full rounded-2xl bg-[#DB2777] text-xs font-extrabold text-white">
         {saved ? format("✅ Saqlandi") : format("Saqlash")}
       </button>
@@ -10499,73 +10633,66 @@ function CardSettings() {
 // =====================
 function PaymentsAdmin() {
   const { format } = useApp();
+  const [status, setStatus] = useState<"pending" | "approved" | "rejected">("pending");
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (st: string) => {
     setLoading(true);
     try {
-      const res = await adminRequest("list_payments", { status: "pending" });
+      const res = await adminRequest("list_payments", { status: st });
       setPayments(res.data ?? []);
     } catch {}
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(status); }, [status, load]);
 
   const approve = async (requestId: string) => {
     await adminRequest("approve_payment", { request_id: requestId });
-    load();
+    load(status);
   };
 
   const reject = async (requestId: string) => {
     await adminRequest("reject_payment", { request_id: requestId });
-    load();
+    load(status);
   };
 
   return (
     <div className="space-y-3">
       <CardSettings />
+      <div className="flex gap-2">
+        {(["pending", "approved", "rejected"] as const).map((st) => (
+          <button key={st} onClick={() => setStatus(st)}
+            className={`flex-1 rounded-2xl px-2 py-2 text-[11px] font-extrabold ${status === st ? "bg-[#DB2777] text-white" : "bg-white text-slate-500 shadow-sm"}`}>
+            {st === "pending" ? format("⏳ Kutilmoqda") : st === "approved" ? format("✅ Tasdiqlangan") : format("❌ Rad etilgan")}
+          </button>
+        ))}
+      </div>
       {loading ? (
         <div className="h-32 animate-pulse rounded-3xl bg-slate-200/70" />
       ) : payments.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          {format("Kutilayotgan to'lovlar yo'q")}
+          {format("So'rovlar yo'q")}
         </div>
       ) : (
         payments.map((p) => (
           <div key={p.id} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
             <div className="flex items-start gap-3">
               {p.screenshot_url ? (
-                <img
-                  src={p.screenshot_url}
-                  alt="screenshot"
-                  className="h-20 w-20 rounded-xl object-cover"
-                />
-              ) : null}
-
+                <img src={p.screenshot_url} alt="check" className="h-20 w-20 rounded-xl object-cover" />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-slate-100 text-2xl">🧾</div>
+              )}
               <div className="flex-1">
-                <p className="text-sm font-bold text-slate-900">
-                  User ID: {p.user_telegram_id}
-                </p>
-                <p className="text-xs text-slate-400">
-                  {new Date(p.created_at).toLocaleString()}
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <button
-                  onClick={() => approve(p.id)}
-                  className="rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-600"
-                >
-                  ✅
-                </button>
-                <button
-                  onClick={() => reject(p.id)}
-                  className="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600"
-                >
-                  ❌
-                </button>
+                <p className="text-sm font-bold text-slate-900">ID: {p.user_telegram_id}</p>
+                <p className="text-xs text-slate-400">{new Date(p.created_at).toLocaleString()}</p>
+                {status === "pending" ? (
+                  <div className="mt-2 flex gap-2">
+                    <button onClick={() => approve(p.id)} className="rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-600">✅</button>
+                    <button onClick={() => reject(p.id)} className="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600">❌</button>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -10647,6 +10774,7 @@ interface RecipeFormState {
   category: string;
   description: string;
   image_url: string;
+  emoji: string;
   cook_time_minutes: string;
   difficulty: string;
   servings: string;
@@ -10660,6 +10788,7 @@ const emptyRecipeForm: RecipeFormState = {
   category: "",
   description: "",
   image_url: "",
+  emoji: "",
   cook_time_minutes: "",
   difficulty: "oson",
   servings: "4",
@@ -10713,6 +10842,7 @@ function RecipesAdmin() {
         category: full.category ?? "",
         description: full.description ?? "",
         image_url: full.image_url ?? "",
+        emoji: full.emoji ?? "",
         cook_time_minutes: String(full.cook_time_minutes ?? ""),
         difficulty: full.difficulty ?? "oson",
         servings: String(full.servings ?? "4"),
@@ -10738,6 +10868,7 @@ function RecipesAdmin() {
       category: form.category.trim() || null,
       description: form.description.trim() || null,
       image_url: form.image_url.trim() || null,
+      emoji: form.emoji.trim() || null,
       cook_time_minutes: form.cook_time_minutes
         ? Number(form.cook_time_minutes)
         : null,
@@ -12419,7 +12550,7 @@ import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../../context/AppContext";
-import { API_BASE, uploadImage } from "../../lib/api";
+import { API_BASE, tgHeaders, uploadImage } from "../../lib/api";
 import { hapticNotification } from "../../lib/telegram";
 import ModalShell from "../ui/ModalShell";
 
@@ -12435,13 +12566,24 @@ function PremiumInner() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState<{ card_number?: string; card_holder?: string } | null>(null);
+  const [cardCopied, setCardCopied] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/payment-card`)
+    fetch(`${API_BASE}/api/payment-card`, { headers: tgHeaders() })
       .then((r) => r.json())
       .then((j) => { if (j?.ok && j.value) setCard(j.value); })
       .catch(() => {});
   }, []);
+
+  const copyCard = async () => {
+    if (!card?.card_number) return;
+    try {
+      await navigator.clipboard.writeText(card.card_number);
+      setCardCopied(true);
+      hapticNotification("success");
+      setTimeout(() => setCardCopied(false), 1500);
+    } catch {}
+  };
 
   useEffect(() => {
     return () => {
@@ -12507,11 +12649,19 @@ function PremiumInner() {
         </div>
 
         {card?.card_number ? (
-          <div className="rounded-3xl bg-slate-900 p-4 text-white shadow-md">
-            <p className="text-[10px] font-bold text-slate-400">{format("To'lov kartasi")}</p>
-            <p className="mt-1 font-mono text-base font-extrabold tracking-wider">{card.card_number}</p>
-            {card.card_holder ? <p className="mt-0.5 text-xs text-slate-300">{card.card_holder}</p> : null}
-          </div>
+          <button
+            onClick={copyCard}
+            className="flex w-full items-center justify-between rounded-3xl bg-slate-900 p-4 text-left shadow-md"
+          >
+            <div>
+              <p className="text-[10px] font-bold text-slate-400">{format("To'lov kartasi (bosib nusxalang)")}</p>
+              <p className="mt-1 font-mono text-base font-extrabold tracking-wider text-white">{card.card_number}</p>
+              {card.card_holder ? <p className="mt-0.5 text-xs text-slate-300">{card.card_holder}</p> : null}
+            </div>
+            <span className="rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white">
+              {cardCopied ? format("✅ Nusxalandi") : format("📋 Nusxalash")}
+            </span>
+          </button>
         ) : null}
 
         <input
@@ -12750,6 +12900,10 @@ export default function RecipeCard({
             loading="lazy"
             className="h-full w-full object-cover"
           />
+        ) : recipe.emoji ? (
+          <div className="flex h-full w-full items-center justify-center text-5xl">
+            {recipe.emoji}
+          </div>
         ) : (
           <div className="flex h-full w-full items-center justify-center text-[#DB2777]/40">
             <ChefHat size={34} />
@@ -13160,6 +13314,10 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
             alt={format(recipe.title)}
             className="h-52 rounded-3xl bg-slate-100"
           />
+        ) : recipe.emoji ? (
+          <div className="flex h-36 w-full items-center justify-center rounded-3xl bg-pink-50 text-6xl">
+            {recipe.emoji}
+          </div>
         ) : null}
 
         {recipe.description ? (
@@ -13677,7 +13835,8 @@ export default function GlobalSearch({
 `typescript
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { registerBack } from "../../lib/back";
 
 interface ModalShellProps {
   open: boolean;
@@ -13692,6 +13851,14 @@ export default function ModalShell({
   onClose,
   children,
 }: ModalShellProps) {
+  useEffect(() => {
+    if (!open) return;
+    return registerBack(() => {
+      onClose();
+      return true;
+    }, 100);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open ? (
@@ -14430,6 +14597,10 @@ export const API_BASE = (
     : "")
 ).replace(/\/$/, "");
 
+export function tgHeaders(): Record<string, string> {
+  return { "x-init-data": getInitData() };
+}
+
 export interface SessionUser {
   id: number;
   first_name: string;
@@ -14573,6 +14744,53 @@ export async function adminRequest(
     action,
     payload,
   });
+}
+
+`
+
+---
+
+## 📄 webapp/src/lib/back.ts
+
+`typescript
+export type BackHandler = () => boolean;
+
+interface Entry {
+  handler: BackHandler;
+  priority: number;
+  seq: number;
+}
+
+let seq = 0;
+const stack: Entry[] = [];
+
+/**
+ * Komponent o'z "orqaga" holatini ro'yxatdan o'tkazadi.
+ * priority: modal=100, sahifa ichidagi holat=50, tab=10.
+ * Qaytaruvchi funksiya — ro'yxatdan o'chiradi (unmount'da).
+ */
+export function registerBack(handler: BackHandler, priority = 0): () => void {
+  const entry: Entry = { handler, priority, seq: seq++ };
+  stack.push(entry);
+  return () => {
+    const idx = stack.indexOf(entry);
+    if (idx >= 0) stack.splice(idx, 1);
+  };
+}
+
+/** Bitta bosish = bitta qadam: eng yuqori priority birinchi ishlaydi */
+export function runBack(): boolean {
+  const sorted = [...stack].sort(
+    (a, b) => b.priority - a.priority || b.seq - a.seq,
+  );
+  for (const entry of sorted) {
+    try {
+      if (entry.handler()) return true;
+    } catch {
+      // ignore
+    }
+  }
+  return false;
 }
 
 `
@@ -15462,7 +15680,6 @@ export function getUniqueIngredients(recipes: Recipe[]): string[] {
 `typescript
 import { toLat } from "./translit";
 
-// Imlo, apostrof va alifbo farqlarini yo'qotadi
 export function normalizeSearch(value: string): string {
   return toLat(value || "")
     .toLowerCase()
@@ -15472,26 +15689,30 @@ export function normalizeSearch(value: string): string {
     .trim();
 }
 
-export function levenshtein(a: string, b: string): number {
-  if (a === b) return 0;
-  if (!a.length) return b.length;
-  if (!b.length) return a.length;
-  let prev = new Array(b.length + 1).fill(0).map((_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const curr = [i, ...new Array(b.length).fill(0)];
-    for (let j = 1; j <= b.length; j++) {
-      curr[j] = Math.min(
-        prev[j] + 1,
-        curr[j - 1] + 1,
-        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
-      );
+// Damerau-Levenshtein (harf almashinishini ham biladi: "sbzi" → "sabzi")
+export function osaDistance(a: string, b: string): number {
+  const la = a.length;
+  const lb = b.length;
+  if (!la) return lb;
+  if (!lb) return la;
+  const d: number[][] = Array.from({ length: la + 1 }, (_, i) => {
+    const row = new Array(lb + 1).fill(0);
+    row[0] = i;
+    return row;
+  });
+  for (let j = 0; j <= lb; j++) d[0][j] = j;
+  for (let i = 1; i <= la; i++) {
+    for (let j = 1; j <= lb; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
     }
-    prev = curr;
   }
-  return prev[b.length];
+  return d[la][lb];
 }
 
-// 0..100 ball: qancha yuqori — shuncha mos
 export function fuzzyScore(query: string, haystack: string): number {
   const q = normalizeSearch(query);
   const h = normalizeSearch(haystack);
@@ -15503,27 +15724,27 @@ export function fuzzyScore(query: string, haystack: string): number {
   for (const qt of qTokens) {
     let best = 0;
     for (const ht of hTokens) {
-      if (ht === qt) { best = Math.max(best, 60); continue; }
-      if (qt.length >= 2 && ht.startsWith(qt)) best = Math.max(best, 40);
-      if (qt.length >= 3 && ht.includes(qt)) best = Math.max(best, 30);
-      const tol = qt.length <= 4 ? 1 : 2;
-      const d = levenshtein(qt, ht);
-      if (d <= tol) best = Math.max(best, 35 - d * 8);
+      if (ht === qt) { best = Math.max(best, 100); continue; }
+      if (qt.length >= 2 && ht.startsWith(qt)) best = Math.max(best, 70);
+      if (qt.length >= 3 && ht.includes(qt)) best = Math.max(best, 55);
+      const tol = qt.length <= 4 ? 1 : qt.length <= 6 ? 2 : 3;
+      const dist = osaDistance(qt, ht);
+      if (dist <= tol) best = Math.max(best, 65 - dist * 15);
       else if (qt.length >= 5) {
-        const d2 = levenshtein(qt, ht.slice(0, qt.length));
-        if (d2 <= tol) best = Math.max(best, 30 - d2 * 6);
+        const d2 = osaDistance(qt, ht.slice(0, qt.length));
+        if (d2 <= tol) best = Math.max(best, 55 - d2 * 12);
       }
     }
     total += best;
   }
-  return total;
+  return qTokens.length ? total / qTokens.length : 0;
 }
 
 export function fuzzyFilter<T>(
   items: T[],
   query: string,
   getText: (item: T) => string,
-  minScore = 25,
+  minScore = 45,
 ): T[] {
   const q = normalizeSearch(query);
   if (!q) return items;
@@ -15858,6 +16079,67 @@ export function convertByScript(text: string, script: "latn" | "kyr"): string {
 
 ---
 
+## 📄 webapp/src/lib/useBackGuard.ts
+
+`typescript
+import { useEffect } from "react";
+import { runBack } from "./back";
+
+export function useBackGuard() {
+  useEffect(() => {
+    const push = () => {
+      try {
+        window.history.pushState({ pazanda: true }, "");
+      } catch {
+        // ignore
+      }
+    };
+    // Himoya holatini qo'shamiz — "nazad" WebView'ni yopmasin
+    push();
+
+    const onPop = () => {
+      const handled = runBack();
+      if (handled) {
+        // Qadam bajarildi — himoyani qayta o'rnatamiz
+        setTimeout(push, 0);
+      }
+      // handled=false bo'lsa → tarix orqaga ketadi → miniapp yopiladi (root'da)
+    };
+
+    window.addEventListener("popstate", onPop);
+
+    // Telegram sarlavhasidagi ← tugmasi ham shu tizimdan foydalanadi
+    const tg = window.Telegram?.WebApp;
+    const onTgBack = () => {
+      if (!runBack()) {
+        try {
+          tg?.close?.();
+        } catch {
+          // ignore
+        }
+      }
+    };
+    try {
+      tg?.BackButton?.onClick(onTgBack);
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      try {
+        tg?.BackButton?.offClick(onTgBack);
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+}
+
+`
+
+---
+
 ## 📄 webapp/src/lib/utils.ts
 
 `typescript
@@ -16114,8 +16396,9 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchLifehacks, getLifehackCategories } from "../api/lifehacks";
 import LifehackCard from "../components/lifehacks/LifehackCard";
 import { useApp } from "../context/AppContext";
+import { registerBack } from "../lib/back";
 import { getCategoryEmoji, normalizeText } from "../lib/lifehack-utils";
-import { hideBackButton, onBackButton, showBackButton } from "../lib/telegram";
+import { hideBackButton, showBackButton } from "../lib/telegram";
 import type { Lifehack } from "../types/lifehack";
 
 const FOLDER_GRADIENTS = [
@@ -16141,11 +16424,20 @@ export default function LifehacksPage() {
   useEffect(() => {
     if (selectedCategory) {
       showBackButton();
-      const off = onBackButton(() => setSelectedCategory(null));
-      return () => { off(); hideBackButton(); };
+      return () => hideBackButton();
     }
     hideBackButton();
     return undefined;
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    return registerBack(() => {
+      if (selectedCategory) {
+        setSelectedCategory(null);
+        return true;
+      }
+      return false;
+    }, 50);
   }, [selectedCategory]);
 
   const categories = useMemo(() => getLifehackCategories(lifehacks), [lifehacks]);
@@ -16415,6 +16707,7 @@ import SmartMatchPanel from "../components/recipes/SmartMatchPanel";
 import GlobalSearch from "../components/search/GlobalSearch";
 import { useApp } from "../context/AppContext";
 import { fetchLifehacks } from "../api/lifehacks";
+import { registerBack } from "../lib/back";
 import { getDifficultyKey } from "../lib/recipe-utils";
 import { fuzzyFilter } from "../lib/search";
 import { toLat } from "../lib/translit";
@@ -16474,6 +16767,30 @@ export default function RecipesPage() {
     fetchLifehacks().then(setLifehacks).catch(() => {});
     fetch(`${API_BASE}/api/category-images`).then((r) => r.json()).then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    return registerBack(() => {
+      if (selectedRecipe) {
+        setSelectedRecipe(null);
+        return true;
+      }
+      return false;
+    }, 100);
+  }, [selectedRecipe]);
+
+  useEffect(() => {
+    return registerBack(() => {
+      if (appliedQuery) {
+        setAppliedQuery("");
+        return true;
+      }
+      if (selectedCategory) {
+        setSelectedCategory(null);
+        return true;
+      }
+      return false;
+    }, 50);
+  }, [appliedQuery, selectedCategory]);
 
   const categories = useMemo(() => {
     const map = new Map<string, number>();
@@ -16661,6 +16978,7 @@ export interface Recipe {
   title: string;
   description?: string;
   image_url?: string;
+  emoji?: string | null;
   cook_time_minutes?: number | null;
   difficulty?: string | null;
   servings?: number;
@@ -16739,6 +17057,7 @@ interface TelegramWebApp {
 
   ready?: () => void;
   expand?: () => void;
+  close?: () => void;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
 

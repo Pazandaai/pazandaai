@@ -8,7 +8,7 @@ import SmartMatchPanel from "../components/recipes/SmartMatchPanel";
 import GlobalSearch from "../components/search/GlobalSearch";
 import { useApp } from "../context/AppContext";
 import { fetchLifehacks } from "../api/lifehacks";
-import { registerBack } from "../lib/back";
+import { registerBack, runBack } from "../lib/back";
 import { getDifficultyKey } from "../lib/recipe-utils";
 import { fuzzyFilter } from "../lib/search";
 import { toLat } from "../lib/translit";
@@ -150,7 +150,7 @@ export default function RecipesPage() {
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-extrabold text-slate-900">{format("Natijalar")}: "{appliedQuery}"</h3>
-            <button onClick={() => setAppliedQuery("")} className="text-xs font-bold text-[#DB2777]">{t("matchClear")}</button>
+            <button onClick={() => { runBack() || setAppliedQuery(""); }} className="text-xs font-bold text-[#DB2777]">{t("matchClear")}</button>
           </div>
           {searchResults.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{t("noRecipes")}</div>
@@ -163,7 +163,7 @@ export default function RecipesPage() {
       ) : selectedCategory ? (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <button onClick={() => setSelectedCategory(null)} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm">
+            <button onClick={() => { runBack() || setSelectedCategory(null); }} className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm">
               <ChevronLeft size={18} />
             </button>
             <span className="text-xl">{getCategoryEmoji(selectedCategory)}</span>
