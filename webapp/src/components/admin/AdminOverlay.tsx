@@ -774,20 +774,28 @@ function BannerAdmin() {
 
   useEffect(() => {
     const load = async () => {
+      setLoading(true);
+      setError(null);
+
       try {
         const response = await adminRequest("get_banner");
-        const value = response?.data?.[0]?.value ?? null;
+
+        const row = Array.isArray(response?.data)
+          ? response.data[0]
+          : response?.data;
+
+        const value = row?.value ?? null;
 
         if (value) {
           setBanner({
             image_url: value.image_url ?? "",
             title: value.title ?? "",
             subtitle: value.subtitle ?? "",
-            active: value.active ?? true,
+            active: value.active !== false,
           });
         }
       } catch (err: any) {
-        setError(err?.message ?? format("Xatolik"));
+        setError(err?.message ?? format("Bannerni yuklashda xatolik"));
       } finally {
         setLoading(false);
       }
@@ -803,7 +811,7 @@ function BannerAdmin() {
 
     try {
       await adminRequest("save_banner", { value: banner });
-      setMessage(format("Banner saqlandi"));
+      setMessage(format("✅ Banner saqlandi"));
     } catch (err: any) {
       setError(err?.message ?? format("Saqlashda xatolik"));
     } finally {

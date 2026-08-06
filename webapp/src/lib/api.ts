@@ -1,5 +1,12 @@
 import { getInitData } from "./telegram";
 
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
+    ? "https://pazandaai.vercel.app"
+    : "")
+).replace(/\/$/, "");
+
 export interface SessionUser {
   id: number;
   first_name: string;
@@ -24,7 +31,9 @@ export interface UploadResponse {
 }
 
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
+  const url = `${API_BASE}${path}`;
+
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -32,10 +41,19 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
 
+  const contentType = response.headers.get("content-type") || "";
+
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      `API JSON qaytarmadi (${response.status}). ` +
+      `Lokal test uchun VITE_API_BASE_URL yoki vercel dev ishlatib ko'ring.`
+    );
+  }
+
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok || !data.ok) {
-    throw new Error(data.error || "API request failed");
+    throw new Error(data.error || `API error: ${response.status}`);
   }
 
   return data as T;
