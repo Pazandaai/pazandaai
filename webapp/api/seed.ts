@@ -9,8 +9,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const isReset = req.query.reset === "1" || req.query.reset === "true";
     if (isReset) {
-      await supabaseFetch("DELETE", "recipes", { id: "not.is.null" });
-      await supabaseFetch("DELETE", "lifehacks", { id: "not.is.null" });
+      await supabaseFetch("DELETE", "recipes", { id: "gt.0" });
+      await supabaseFetch("DELETE", "lifehacks", { id: "gt.0" });
     }
 
     let insertedRecipes = 0;

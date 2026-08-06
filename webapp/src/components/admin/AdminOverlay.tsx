@@ -1343,6 +1343,7 @@ function BannerAdmin() {
   const [title, setTitle] = useState("");
   const [badge, setBadge] = useState("");
   const [image, setImage] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
   const [linkText, setLinkText] = useState("");
   const [saved, setSaved] = useState(false);
 
@@ -1354,7 +1355,8 @@ function BannerAdmin() {
           setTitle(b.title ?? "");
           setBadge(b.badge ?? b.subtitle ?? "");
           setImage(b.image_url ?? b.image ?? "");
-          setLinkText(b.link_text ?? b.linkText ?? "");
+          setLinkUrl(b.link_url ?? b.target_url ?? b.button_url ?? b.linkUrl ?? "");
+          setLinkText(b.link_text ?? b.button_text ?? b.linkText ?? "");
         }
       })
       .catch(() => {});
@@ -1366,10 +1368,15 @@ function BannerAdmin() {
         title,
         badge,
         image,
+        linkUrl,
         linkText,
         subtitle: badge,
         image_url: image,
+        link_url: linkUrl,
+        target_url: linkUrl,
+        button_url: linkUrl,
         link_text: linkText,
+        button_text: linkText,
         active: true,
       },
     });
@@ -1399,7 +1406,17 @@ function BannerAdmin() {
       </div>
 
       <div>
-        <label className="text-xs font-bold text-slate-500">{format("Tugma matni")}</label>
+        <label className="text-xs font-bold text-slate-500">{format("Havola URL (Link: https://... yoki /recipes)")}</label>
+        <input
+          value={linkUrl}
+          onChange={(e) => setLinkUrl(e.target.value)}
+          placeholder="https://t.me/... yoki /recipes"
+          className={inputClass}
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-bold text-slate-500">{format("Tugma matni (masalan: Batafsil)")}</label>
         <input value={linkText} onChange={(e) => setLinkText(e.target.value)} className={inputClass} />
       </div>
 

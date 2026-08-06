@@ -8,7 +8,7 @@ interface BannerCarouselProps {
 }
 
 export default function BannerCarousel({ slides }: BannerCarouselProps) {
-  const { format } = useApp();
+  const { format, setActiveTab } = useApp();
   const [index, setIndex] = useState(0);
   const [imgError, setImgError] = useState(false);
   const touchX = useRef<number | null>(null);
@@ -36,6 +36,27 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
 
   const linkUrl = slide.link_url || slide.button_url;
   const linkText = slide.link_text || slide.button_text || "Batafsil";
+
+  const handleLinkClick = (e: React.MouseEvent) => {
+    if (!linkUrl) return;
+    const cleanUrl = linkUrl.trim().toLowerCase();
+    if (cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://") || cleanUrl.startsWith("t.me")) {
+      const tg = (window as any).Telegram?.WebApp;
+      if (tg?.openLink) {
+        e.preventDefault();
+        tg.openLink(cleanUrl.startsWith("t.me") ? `https://${cleanUrl}` : linkUrl);
+      }
+    } else if (cleanUrl.includes("recipe") || cleanUrl.includes("retsept")) {
+      e.preventDefault();
+      setActiveTab("recipes");
+    } else if (cleanUrl.includes("lifehack") || cleanUrl.includes("layfhak")) {
+      e.preventDefault();
+      setActiveTab("lifehacks");
+    } else if (cleanUrl.includes("profile") || cleanUrl.includes("profil")) {
+      e.preventDefault();
+      setActiveTab("profile");
+    }
+  };
 
   const onTouchStart = (e: React.TouchEvent) => {
     touchX.current = e.touches[0].clientX;
@@ -89,6 +110,7 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
         {linkUrl ? (
           <a
             href={linkUrl}
+            onClick={handleLinkClick}
             target="_blank"
             rel="noreferrer"
             className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-[11px] font-extrabold text-[#DB2777] shadow active:scale-95 transition-transform"
