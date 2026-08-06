@@ -6,7 +6,7 @@ import { useSession } from "../../hooks/useSession";
 import { adminRequest } from "../../lib/api";
 import { registerBack } from "../../lib/back";
 import { DEFAULT_CATEGORIES, DEFAULT_PRODUCTS } from "../../lib/products";
-import { parseSingleIngredient } from "../../lib/recipe-utils";
+import { parseSingleIngredient, mergeBrokenEntries } from "../../lib/recipe-utils";
 import { hapticNotification, hapticSelection } from "../../lib/telegram";
 import ImageUploader from "./ImageUploader";
 
@@ -39,8 +39,9 @@ function parseMaybeJson(value: unknown): any[] {
 }
 
 function ingredientsToLines(list: any[]): string {
+  const merged = mergeBrokenEntries(list);
   const out: string[] = [];
-  for (const raw of list) {
+  for (const raw of merged) {
     const name = String(raw?.name ?? "");
     const parts = name.split(/\\n|\n/).map((s: string) => s.trim()).filter(Boolean);
     const pieces = parts.length ? parts : [name.trim()];
@@ -225,22 +226,22 @@ function StatsAdmin() {
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400">{format("Foydalanuvchilar")}</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.total_users ?? stats?.usersCount ?? 0}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.total_users ?? 0}</p>
         </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400">{format("Premium a'zolar")}</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-pink-600">{stats?.premium_users ?? stats?.premiumUsersCount ?? 0}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-pink-600">{stats?.premium_users ?? 0}</p>
         </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400">{format("Retseptlar")}</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.total_recipes ?? stats?.recipesCount ?? 0}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.total_recipes ?? 0}</p>
         </div>
 
         <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-slate-400">{format("Lifehacklar")}</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.total_lifehacks ?? stats?.lifehacksCount ?? 0}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-slate-900">{stats?.total_lifehacks ?? 0}</p>
         </div>
       </div>
     </div>
@@ -1352,8 +1353,8 @@ function BannerAdmin() {
         if (b) {
           setTitle(b.title ?? "");
           setBadge(b.badge ?? b.subtitle ?? "");
-          setImage(b.image ?? b.image_url ?? "");
-          setLinkText(b.linkText ?? b.link_text ?? "");
+          setImage(b.image_url ?? b.image ?? "");
+          setLinkText(b.link_text ?? b.linkText ?? "");
         }
       })
       .catch(() => {});
@@ -1366,8 +1367,8 @@ function BannerAdmin() {
         badge,
         image,
         linkText,
-        image_url: image,
         subtitle: badge,
+        image_url: image,
         link_text: linkText,
         active: true,
       },

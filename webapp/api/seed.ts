@@ -7,6 +7,12 @@ const LIFEHACKS = [{"title": "Go'shtni tishda chaynaladigan pambiqdek yumshoq qi
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
+    const isReset = req.query.reset === "1" || req.query.reset === "true";
+    if (isReset) {
+      await supabaseFetch("DELETE", "recipes", { id: "not.is.null" });
+      await supabaseFetch("DELETE", "lifehacks", { id: "not.is.null" });
+    }
+
     let insertedRecipes = 0;
     for (let i = 0; i < RECIPES.length; i += 20) {
       const batch = RECIPES.slice(i, i + 20);

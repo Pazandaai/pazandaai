@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { API_BASE } from "../lib/api";
 
 export interface BannerSlide {
   id: string;
@@ -20,15 +21,7 @@ export interface HomeBanner {
   subtitle?: string;
 }
 
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" &&
-  window.location.hostname.includes("localhost")
-    ? "https://pazandaai.vercel.app"
-    : "")
-)
-  .replace(/\/$/, "")
-  .replace(/\/api$/, "");
+
 
 // Strips extra quotes and whitespace from strings
 const clean = (v: unknown): string => {

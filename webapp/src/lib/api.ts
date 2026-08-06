@@ -1,14 +1,13 @@
 import { compressImage } from "./compress";
 import { getInitData } from "./telegram";
 
-export const API_BASE = (
+const rawBase =
   import.meta.env.VITE_API_BASE_URL ||
   (typeof window !== "undefined" && window.location.hostname.includes("localhost")
     ? "https://pazandaai.vercel.app"
-    : "")
-)
-  .replace(/\/$/, "")
-  .replace(/\/api$/, "");
+    : "");
+
+export const API_BASE = rawBase.replace(/\/+$/, "").replace(/\/api$/, "");
 
 export function tgHeaders(): Record<string, string> {
   return { "x-init-data": getInitData() };

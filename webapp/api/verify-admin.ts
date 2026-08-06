@@ -40,29 +40,24 @@ export default async function handler(
       dbUser = null;
     }
 
-    if (isAdmin && dbUser && !dbUser.is_premium) {
+    if (isAdmin && (!dbUser || !dbUser.is_premium)) {
       try {
         const futureDate = new Date();
         futureDate.setFullYear(futureDate.getFullYear() + 10);
-
         await supabaseFetch(
           "PATCH",
           "users",
           { telegram_id: `eq.${user.id}` },
-          {
-            is_premium: true,
-            premium_until: futureDate.toISOString(),
-          },
+          { is_premium: true, premium_until: futureDate.toISOString() },
           "return=representation",
         );
-
-        dbUser.is_premium = true;
-        dbUser.premium_until = futureDate.toISOString();
+        dbUser = { ...(dbUser ?? {}), is_premium: true, premium_until: futureDate.toISOString() };
       } catch (e) {
         console.error("[verify-admin] premium grant error:", e);
       }
     }
 
+    const tenYears = new Date(Date.now() + 10 * 365 * 24 * 3600 * 1000).toISOString();
     return res.status(200).json({
       ok: true,
       isAdmin,
@@ -73,7 +68,7 @@ export default async function handler(
         username: user.username,
         language: dbUser?.language ?? "latn",
         is_premium: Boolean(dbUser?.is_premium) || isAdmin,
-        premium_until: dbUser?.premium_until ?? (isAdmin ? new Date(Date.now() + 315360000000).toISOString() : null),
+        premium_until: isAdmin ? (dbUser?.premium_until ?? tenYears) : (dbUser?.premium_until ?? null),
       },
     });
   } catch (error: any) {

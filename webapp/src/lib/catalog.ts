@@ -1,20 +1,11 @@
 import { useEffect, useState } from "react";
-import { tgHeaders } from "./api";
+import { tgHeaders, API_BASE } from "./api";
 import {
   DEFAULT_CATEGORIES,
   DEFAULT_PRODUCTS,
   type Product,
   type ProductCategory,
 } from "./products";
-
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
-    ? "https://pazandaai.vercel.app"
-    : "")
-)
-  .replace(/\/$/, "")
-  .replace(/\/api$/, "");
 
 export function useProductCatalog() {
   const [categories, setCategories] = useState<ProductCategory[]>(DEFAULT_CATEGORIES);

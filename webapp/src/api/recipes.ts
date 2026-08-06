@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase";
-import { parseIngredientEntry } from "../lib/recipe-utils";
+import { parseIngredientEntry, mergeBrokenEntries } from "../lib/recipe-utils";
 import { cacheGet, cacheSet } from "../lib/cache";
 import { tgHeaders, API_BASE } from "../lib/api";
 import type { Recipe, RecipeStep } from "../types";
@@ -40,7 +40,7 @@ function normalizeRecipe(row: any): Recipe {
     cook_time_minutes: row.cook_time_minutes ?? null,
     difficulty: row.difficulty ?? null,
     servings: row.servings ?? 4,
-    ingredients: parseJsonArray(row.ingredients).flatMap((raw) =>
+    ingredients: mergeBrokenEntries(parseJsonArray(row.ingredients)).flatMap((raw) =>
       parseIngredientEntry(raw),
     ),
     steps: parseJsonArray(row.steps).map(normalizeStep),

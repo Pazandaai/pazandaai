@@ -123,26 +123,23 @@ export function parseSingleIngredient(line: string): RecipeIngredient {
     quantity = toNumber(lead[1]);
     unit = lead[2] ? normalizeUnit(lead[2]) : null;
     text = text.slice(lead[0].length).trim();
-  } else {
-    const paren = text.match(PAREN_RE);
-    if (paren) {
-      quantity = toNumber(paren[1]);
-      unit = normalizeUnit(paren[2]);
-      text = text.slice(0, paren.index ?? 0).trim();
-    }
   }
-
   const leadParen = text.match(LEAD_PAREN_RE);
-  if (leadParen && (quantity == null || unit == null)) {
-    if (quantity == null) quantity = toNumber(leadParen[1]);
-    if (unit == null) unit = normalizeUnit(leadParen[2]);
+  if (leadParen) {
+    if (quantity == null) { quantity = toNumber(leadParen[1]); unit = normalizeUnit(leadParen[2]); }
     text = text.slice(leadParen[0].length).trim();
   }
-
-  // Remove trailing amounts or numbers left over
+  const paren = text.match(PAREN_RE);
+  if (paren) {
+    if (quantity == null) { quantity = toNumber(paren[1]); unit = normalizeUnit(paren[2]); }
+    text = text.slice(0, paren.index ?? 0).trim();
+  }
   text = text.replace(/^[0-9¼½¾⅓⅔][0-9¼½¾⅓⅔.,\s/–-]*\s*/, "");
-  // Clean up residual unit words at beginning of ingredient name
-  text = text.replace(/^(dona|osh qoshiq|choy qoshiq|stakan|banka|so'ta|tish|chimdim|bo'lak|rendasi)\s+/i, "");
+  if (!unit) {
+    text = text.replace(
+      /^(dona|osh qoshiq|choy qoshiq|stakan|banka|so'ta|shoxcha|varaq|dasta|bog'|chimdim|tish|quti|bo'lak|litr)\s+/i, ""
+    );
+  }
   // Remove parenthetical descriptions like (ingichka somoncha to'g'ralgan)
   text = text.replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
   text = text.replace(/^[\s,.:;—-]+|[\s,.:;—-]+$/g, "").trim();
@@ -157,7 +154,7 @@ export function parseSingleIngredient(line: string): RecipeIngredient {
 export function parseIngredientEntry(raw: any): RecipeIngredient[] {
   const rawName = String(raw?.name ?? "");
   const lines = rawName
-    .split(/\\n|\n|;\s*|\.\s+(?=[A-Z0-9])/)
+    .split(/\n|\r|;\s*|\.\s+(?=[A-Z0-9¼½¾⅓⅔])/)
     .map((l) => l.trim())
     .filter(Boolean);
   if (!lines.length) return [];
@@ -174,6 +171,25 @@ export function parseIngredientEntry(raw: any): RecipeIngredient[] {
   if (out.length === 1 && typeof raw?.quantity === "number") {
     out[0].quantity = raw.quantity;
     out[0].unit = raw?.unit ?? out[0].unit ?? null;
+  }
+  return out;
+}
+
+export function mergeBrokenEntries(entries: any[]): any[] {
+  const out: any[] = [];
+  for (const raw of entries) {
+    const name = String(raw?.name ?? "").trim();
+    const prev = out[out.length - 1];
+    const prevName = prev ? String(prev.name ?? "") : "";
+    const prevOpenParen =
+      (prevName.match(/\(/g) || []).length > (prevName.match(/\)/g) || []).length;
+    const isFragment =
+      /^[a-z]/.test(name) && name.includes(")");
+    if (prev && !/\d/.test(name) && (prevOpenParen || isFragment)) {
+      prev.name = `${prevName} ${name}`;
+    } else {
+      out.push({ ...raw, name });
+    }
   }
   return out;
 }

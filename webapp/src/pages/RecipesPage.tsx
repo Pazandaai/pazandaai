@@ -2,7 +2,7 @@ import { ChevronLeft, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { fetchRecipes } from "../api/recipes";
-import { tgHeaders } from "../lib/api";
+import { tgHeaders, API_BASE } from "../lib/api";
 import RecipeCard from "../components/recipes/RecipeCard";
 import RecipeModal from "../components/recipes/RecipeModal";
 import SmartMatchPanel from "../components/recipes/SmartMatchPanel";
@@ -16,15 +16,6 @@ import { toLat } from "../lib/translit";
 import { cn } from "../lib/utils";
 import type { DifficultyKey, Recipe } from "../types";
 import type { Lifehack } from "../types/lifehack";
-
-const API_BASE = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
-    ? "https://pazandaai.vercel.app"
-    : "")
-)
-  .replace(/\/$/, "")
-  .replace(/\/api$/, "");
 
 function getCategoryEmoji(cat: string): string {
   const v = toLat(cat).toLowerCase();
