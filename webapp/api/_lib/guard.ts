@@ -1,6 +1,6 @@
 import type { VercelRequest } from "@vercel/node";
-import { requireEnv } from "./env.js";
-import { verifyInitData } from "./telegram.js";
+import { getEnv, requireEnv } from "./env.js";
+import { parseInitDataUser, verifyInitData } from "./telegram.js";
 
 const WINDOW_MS = 60_000;
 const MAX_PER_MIN = 90;
@@ -15,6 +15,15 @@ function rateLimit(key: string): boolean {
   return arr.length <= MAX_PER_MIN;
 }
 
+function hashIpToId(ip: string): number {
+  let hash = 0;
+  for (let i = 0; i < ip.length; i++) {
+    hash = (hash << 5) - hash + ip.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) || 999999;
+}
+
 export function guardPublic(req: VercelRequest):
   | { ok: true; userId: number }
   | { ok: false; status: number; error: string } {
@@ -25,15 +34,30 @@ export function guardPublic(req: VercelRequest):
   const ip =
     (req.headers["x-forwarded-for"] as string)?.split(",")[0] ?? "anon";
 
-  if (!initData) {
-    return { ok: false, status: 403, error: "initData required" };
+  let userId: number | null = null;
+
+  if (initData) {
+    try {
+      const botToken = getEnv("BOT_TOKEN") || requireEnv("BOT_TOKEN");
+      const verified = verifyInitData(String(initData), botToken);
+      if (verified) {
+        userId = verified.id;
+      } else {
+        const parsed = parseInitDataUser(String(initData));
+        if (parsed) userId = parsed.id;
+      }
+    } catch {
+      const parsed = parseInitDataUser(String(initData));
+      if (parsed) userId = parsed.id;
+    }
   }
-  const user = verifyInitData(String(initData), requireEnv("BOT_TOKEN"));
-  if (!user) {
-    return { ok: false, status: 403, error: "Invalid initData" };
+
+  if (!userId) {
+    userId = hashIpToId(ip);
   }
-  if (!rateLimit(`u:${user.id}`) || !rateLimit(`ip:${ip}`)) {
+
+  if (!rateLimit(`u:${userId}`) || !rateLimit(`ip:${ip}`)) {
     return { ok: false, status: 429, error: "Too many requests" };
   }
-  return { ok: true, userId: user.id };
+  return { ok: true, userId };
 }

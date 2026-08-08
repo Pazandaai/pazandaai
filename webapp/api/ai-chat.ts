@@ -102,6 +102,7 @@ async function callGroq(messages: { role: string; content: string }[]): Promise<
   if (!p.length) throw new Error("GROQ_API_KEYS sozlanmagan");
   const tried = new Set<string>();
   let lastStatus = 0;
+  let lastErrText = "";
   for (let attempt = 0; attempt < Math.min(p.length, 6); attempt++) {
     const key = pickKey(tried);
     if (!key) break;
@@ -121,10 +122,11 @@ async function callGroq(messages: { role: string; content: string }[]): Promise<
       return String(json?.choices?.[0]?.message?.content ?? "");
     }
     lastStatus = res.status;
+    lastErrText = await res.text().catch(() => "");
+    console.error(`[Groq] Key failed with status ${res.status}: ${lastErrText}`);
     if (res.status === 400) break; // so'rov xatosi — kalit almashtirish foydasiz
-    // 429/5xx → loop davom etadi, KEYINGI KALIT (kutish yo'q!)
   }
-  throw new Error(`Groq pool xatosi (${lastStatus || "no keys"})`);
+  throw new Error(`Groq pool xatosi (${lastStatus || "no keys"}): ${lastErrText.slice(0, 100)}`);
 }
 
 // ===================== HANDLER =====================

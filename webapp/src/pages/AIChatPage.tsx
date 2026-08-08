@@ -65,7 +65,11 @@ export default function AIChatPage() {
         setQuota({ used: r.used ?? 0, limit: r.limit ?? 0 });
         setLimitHit(true);
       } else {
-        setMessages((p) => [...p, { role: "assistant", content: format("😔 AI bilan aloqa uzildi. Birozdan keyin qayta urinib ko'ring.") }]);
+        const detail = r.error ? ` (${r.error})` : "";
+        setMessages((p) => [
+          ...p,
+          { role: "assistant", content: format(`😔 AI bilan aloqa uzildi${detail}. Birozdan keyin qayta urinib ko'ring.`) },
+        ]);
       }
     } catch {
       setMessages((p) => [...p, { role: "assistant", content: format("😔 Server bilan aloqa yo'q.") }]);
