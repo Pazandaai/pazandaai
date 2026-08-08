@@ -12,9 +12,17 @@ let pool: KeyState[] | null = null;
 let rr = -1;
 
 function getPool(): KeyState[] {
-  if (pool) return pool;
-  const raw = getEnv("GROQ_API_KEYS") || getEnv("GROQ_API_KEY") || "";
-  pool = raw.split(",").map((s) => s.trim()).filter(Boolean)
+  if (pool && pool.length > 0) return pool;
+  const raw =
+    process.env.GROQ_API_KEYS ||
+    process.env.GROQ_API_KEY ||
+    getEnv("GROQ_API_KEYS") ||
+    getEnv("GROQ_API_KEY") ||
+    "";
+  pool = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
     .map((key) => ({ key, cooldownUntil: 0, fails: 0 }));
   return pool;
 }
@@ -144,9 +152,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 1) Kvota (admin — cheksiz)
     if (!isAdmin) {
-      const c = await supabaseFetch("POST", "rpc/ai_try_consume", {}, { uid: g.userId, max_limit: limit });
-      const r0 = Array.isArray(c) ? c[0] : c;
-      if (!r0?.ok) return res.status(429).json({ ok: false, error: "limit", used: r0?.used ?? limit, limit, isPremium });
+      const c = await supabaseFetch("POST", "rpc/ai_try_consume", {}, { uid: g.userId, max_limit: limit }).catch(() => null);
+      if (c) {
+        const r0 = Array.isArray(c) ? c[0] : c;
+        if (r0 && r0.ok === false) return res.status(429).json({ ok: false, error: "limit", used: r0?.used ?? limit, limit, isPremium });
+      }
     }
 
     // 2) RAG kontekst
