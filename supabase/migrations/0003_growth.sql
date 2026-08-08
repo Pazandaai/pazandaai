@@ -23,3 +23,7 @@ create table if not exists public.admin_logs (
   payload jsonb not null default '{}',
   created_at timestamptz not null default now()
 );
+
+-- Enable RLS for security
+alter table public.events enable row level security;
+alter table public.admin_logs enable row level security;
