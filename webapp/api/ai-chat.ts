@@ -69,7 +69,7 @@ const SYSTEM_PROMPT = `Sen "Pazanda AI" — o'zbek oilaviy oshxonasining profess
 QOIDALAR:
 1. Faqat oshxona mavzusida: retsept, masalliq, mahsulot saqlash/lifehack. Boshqa mavzuda: "Kechirasiz, men faqat oshxona bo'yicha yordam beraman 🙂"
 2. O'zbek lotin tilida JUDA QISQA (30–60 so'z), do'stona, emoji bilan javob ber.
-3. RETSEPT TAVSIYA QILSANG: QILINISH BOSQICHLARINI VA MASALLIQLARNI MATNDA BATAFSIL YOZMA! Matnda shunchaki 1 cümlada retseptni maqtang va oxirida [[RECIPE:ID]] belgisini qo'ying. Foydalanuvchi "Ochish" tugmasini bosib to'liq tayyorlanishini ko'radi. TOKEN ISROF QILMA!
+3. RETSEPT TAVSIYA QILSANG: QILINISH BOSQICHLARINI VA MASALLIQLARNI MATNDA BATAFSIL YOZMA! Matnda shunchaki 1 jumlada retseptni maqtang va oxirida [[RECIPE:ID]] belgisini qo'ying. Foydalanuvchi "Ochish" tugmasini bosib to'liq tayyorlanishini ko'radi. TOKEN ISROF QILMA!
 4. LIFEHACK/MASLAHAT TAVSIYA QILSANG — javob oxirida [[LIFEHACK:ID]] belgisini qo'y.
 5. FAQAT bazada bor bo'lgan ID'larni ishlat. Bazada bo'lmasa — faqat 1-2 jumlali qisqa umumiy maslahat ber.`;
 
@@ -132,15 +132,16 @@ function buildContext(question: string, recipes: any[], lifehacks: any[]) {
   };
 }
 
-// ===================== GROQ CHAQIRUV =====================
-async function callGroq(messages: { role: string; content: string }[]): Promise<string> {
+// ===================== GROQ CHAQIRUV (SMART FAILOVER CHAIN) =====================
+async function callGroq(messages: { role: string; content: string }[]): Promise<{ content: string; modelUsed: string }> {
   const p = getPool();
   if (!p.length) throw new Error("GROQ_API_KEYS sozlanmagan");
 
-  const primaryModel = getEnv("GROQ_MODEL") || "openai/gpt-oss-120b";
+  const primaryModel = getEnv("GROQ_MODEL") || "llama-3.1-8b-instant";
   const modelsToTry = [primaryModel];
-  if (primaryModel !== "llama-3.3-70b-versatile") modelsToTry.push("llama-3.3-70b-versatile");
-  if (!modelsToTry.includes("llama-3.1-8b-instant")) modelsToTry.push("llama-3.1-8b-instant");
+  if (primaryModel !== "llama-3.1-8b-instant") modelsToTry.push("llama-3.1-8b-instant");
+  if (!modelsToTry.includes("openai/gpt-oss-120b")) modelsToTry.push("openai/gpt-oss-120b");
+  if (!modelsToTry.includes("llama-3.3-70b-versatile")) modelsToTry.push("llama-3.3-70b-versatile");
 
   let lastStatus = 0;
   let lastErrText = "";
@@ -167,7 +168,8 @@ async function callGroq(messages: { role: string; content: string }[]): Promise<
 
       if (res.ok) {
         const json = await res.json();
-        return String(json?.choices?.[0]?.message?.content ?? "");
+        const content = String(json?.choices?.[0]?.message?.content ?? "");
+        return { content, modelUsed: model };
       }
 
       lastStatus = res.status;
@@ -191,7 +193,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       user_id: `eq.${g.userId}`, day: `eq.${todayStr()}`, select: "used", limit: 1,
     }).catch(() => []);
     const used = rows?.[0]?.used ?? 0;
-    return res.status(200).json({ ok: true, used, remaining: Math.max(0, limit - used), limit, isAdmin, model: getEnv("GROQ_MODEL") || "openai/gpt-oss-120b" });
+    return res.status(200).json({ ok: true, used, remaining: Math.max(0, limit - used), limit, isAdmin, model: getEnv("GROQ_MODEL") || "llama-3.1-8b-instant" });
   }
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
   const g = guardPublic(req);
@@ -219,9 +221,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { context, candidateRecipes, candidateLifehacks } = buildContext(message, recipeRows, lifehackRows);
 
     // 3) Groq AI Chaqiruv
-    let reply = "";
+    let replyObj = { content: "", modelUsed: "llama-3.1-8b-instant" };
     try {
-      reply = await callGroq([
+      replyObj = await callGroq([
         { role: "system", content: SYSTEM_PROMPT + (context ? `\n\nMA'LUMOT BAZASI:\n${context}` : "") },
         ...history,
         { role: "user", content: message },
@@ -230,6 +232,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!isAdmin) await supabaseFetch("POST", "rpc/ai_refund", {}, { uid: g.userId }).catch(() => {});
       throw e;
     }
+
+    const reply = replyObj.content;
+    const modelUsed = replyObj.modelUsed;
 
     // 4) [[RECIPE:ID]] va [[LIFEHACK:ID]] belgilarni ajratib olish
     const validRecipes = new Map<number, any>(recipeRows.map((r) => [Number(r.id), r]));
@@ -277,7 +282,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       remaining: Math.max(0, limit - used),
       limit,
       isAdmin,
-      model: getEnv("GROQ_MODEL") || "openai/gpt-oss-120b",
+      model: modelUsed,
     });
   } catch (e: any) {
     console.error("[ai-chat]", e);
