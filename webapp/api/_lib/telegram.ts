@@ -63,6 +63,13 @@ export function verifyInitData(
       console.warn("[verify] HMAC mismatch — soxta initData rad etildi");
       return null;
     }
+
+    const authDate = Number(params.get("auth_date"));
+    if (!authDate || Date.now() / 1000 - authDate > 86_400) {
+      console.warn("[verify] auth_date eskirgan — rad etildi");
+      return null;
+    }
+
     return parseInitDataUser(cleanData);
   } catch (err) {
     console.error("[verify] error:", err);

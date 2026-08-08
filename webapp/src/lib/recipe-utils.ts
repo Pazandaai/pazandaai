@@ -276,7 +276,7 @@ export function getDifficultyKey(
   if (!difficulty) return null;
   const value = difficulty.toLowerCase();
   if (value.includes("oson") || value.includes("easy")) return "easy";
-  if (value.includes("qiyin") || value.includes("hard")) return "hard";
+  if (value.includes("qiyin") || value.includes("hard") || value.includes("murakkab")) return "hard";
   if (
     value.includes("orta") ||
     value.includes("o'rta") ||

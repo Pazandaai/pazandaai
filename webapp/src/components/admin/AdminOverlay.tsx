@@ -511,6 +511,7 @@ function BroadcastAdmin() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ sent: number; failed: number } | null>(null);
 
   const send = async () => {
     if (!text.trim() || sending) return;
@@ -519,16 +520,23 @@ function BroadcastAdmin() {
 
     setSending(true);
     setResult(null);
+    setProgress(null);
 
     try {
-      const res = await adminRequest("broadcast", { text: text.trim() });
-      setResult(format(`Yuborildi: ${res.sent ?? 0}, Xato: ${res.failed ?? 0}`));
+      let r = await adminRequest("broadcast", { text: text.trim() });
+      while (r && r.status === "running") {
+        setProgress({ sent: r.sent ?? 0, failed: r.failed ?? 0 });
+        await new Promise((s) => setTimeout(s, 2500));
+        r = await adminRequest("broadcast", { continue: true });
+      }
+      setResult(format(`Yuborildi: ${r?.sent ?? 0}, Xato: ${r?.failed ?? 0}`));
       hapticNotification("success");
       setText("");
     } catch (err: any) {
       setResult(err?.message ?? format("Xatolik"));
     } finally {
       setSending(false);
+      setProgress(null);
     }
   };
 
@@ -545,6 +553,12 @@ function BroadcastAdmin() {
         className="h-32 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-[#DB2777]/40"
       />
 
+      {progress ? (
+        <div className="rounded-2xl bg-sky-50 px-4 py-2 text-xs font-bold text-sky-700">
+          ⏳ {progress.sent} ta yuborildi...
+        </div>
+      ) : null}
+
       {result ? (
         <div className="rounded-2xl bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-700">
           {result}
@@ -553,8 +567,8 @@ function BroadcastAdmin() {
 
       <button
         onClick={send}
-        disabled={!text.trim() || sending}
-        className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white disabled:opacity-40"
+        disabled={sending}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white disabled:opacity-50"
       >
         {sending ? format("Yuborilmoqda...") : format("📣 Yuborish")}
       </button>

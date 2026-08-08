@@ -22,7 +22,7 @@ export default function ProfilePage() {
     return user;
   }, [session?.user, user]);
 
-  const showAdminButton = isAdmin || currentUser.id === 8544023815;
+  const showAdminButton = isAdmin;
 
   const premiumUntil = session?.user?.premium_until ? new Date(session.user.premium_until) : null;
   const daysLeft = premiumUntil ? Math.max(0, Math.ceil((premiumUntil.getTime() - Date.now()) / 86400000)) : 0;

@@ -16,6 +16,8 @@ import LifehacksPage from "./pages/LifehacksPage";
 import ProfilePage from "./pages/ProfilePage";
 import RecipesPage from "./pages/RecipesPage";
 
+import { ErrorBoundary } from "./components/ErrorBoundary";
+
 function AppContent() {
   const { activeTab, setActiveTab } = useApp();
 
@@ -71,8 +73,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }
