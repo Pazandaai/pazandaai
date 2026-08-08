@@ -31,13 +31,24 @@ function pickKey(exclude: Set<string>): string | null {
   const p = getPool();
   if (!p.length) return null;
   const now = Date.now();
+
+  // 1-pass: find available key not in cooldown and not excluded
   for (let i = 0; i < p.length; i++) {
     rr = (rr + 1) % p.length;
     const k = p[rr];
     if (exclude.has(k.key) || k.cooldownUntil > now) continue;
     return k.key;
   }
-  return null; // hammasi cooldown'da
+
+  // 2-pass: fallback to non-excluded key with smallest cooldown (even if in cooldown)
+  let best: KeyState | null = null;
+  for (const k of p) {
+    if (exclude.has(k.key)) continue;
+    if (!best || k.cooldownUntil < best.cooldownUntil) {
+      best = k;
+    }
+  }
+  return best ? best.key : p[0].key;
 }
 
 function markResult(key: string, status: number, retryAfterSec?: number) {
@@ -45,14 +56,15 @@ function markResult(key: string, status: number, retryAfterSec?: number) {
   if (!k) return;
   const now = Date.now();
   if (status === 200) { k.cooldownUntil = 0; k.fails = 0; return; }
-  if (status === 429) { // limit — darhol boshqa kalitga o'tamiz
-    const wait = retryAfterSec ? retryAfterSec * 1000 : 30_000;
-    k.cooldownUntil = now + Math.min(wait, 120_000);
+  if (status === 429) {
+    // 429 Rate limit — short cooldown (5s to 15s) so keys rotate fast
+    const wait = retryAfterSec ? retryAfterSec * 1000 : 8_000;
+    k.cooldownUntil = now + Math.min(wait, 30_000);
     k.fails++;
   } else if (status === 401 || status === 403) {
-    k.cooldownUntil = now + 3_600_000; // nosoz kalit — 1 soat
+    k.cooldownUntil = now + 3_600_000; // invalid key — 1 hour
   } else if (status >= 500) {
-    k.cooldownUntil = now + 20_000;
+    k.cooldownUntil = now + 10_000;
   }
 }
 
@@ -71,7 +83,7 @@ async function getRecipes(): Promise<any[]> {
   const rows = await supabaseFetch("GET", "recipes", {
     select: "id,title,category,description,ingredients,image_url",
     is_published: "eq.true", limit: 500,
-  });
+  }).catch(() => []);
   recipesCache = { ts: Date.now(), rows: rows ?? [] };
   return recipesCache.rows;
 }
@@ -96,36 +108,53 @@ function safeArr(v: unknown): any[] {
   return [];
 }
 
-// ===================== GROQ CHAQIRUV (failover) =====================
+// ===================== GROQ CHAQIRUV (model & key failover) =====================
 async function callGroq(messages: { role: string; content: string }[]): Promise<string> {
   const p = getPool();
   if (!p.length) throw new Error("GROQ_API_KEYS sozlanmagan");
-  const tried = new Set<string>();
+
+  const primaryModel = getEnv("GROQ_MODEL") || "llama-3.3-70b-versatile";
+  const modelsToTry = [primaryModel];
+  if (primaryModel !== "llama-3.1-8b-instant") {
+    modelsToTry.push("llama-3.1-8b-instant");
+  }
+
   let lastStatus = 0;
   let lastErrText = "";
-  for (let attempt = 0; attempt < Math.min(p.length, 6); attempt++) {
-    const key = pickKey(tried);
-    if (!key) break;
-    tried.add(key);
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model: getEnv("GROQ_MODEL") || "llama-3.3-70b-versatile",
-        temperature: 0.6, max_tokens: 900,
-        messages,
-      }),
-    });
-    markResult(key, res.status, Number(res.headers.get("retry-after")) || undefined);
-    if (res.ok) {
-      const json = await res.json();
-      return String(json?.choices?.[0]?.message?.content ?? "");
+
+  for (const model of modelsToTry) {
+    const tried = new Set<string>();
+    for (let attempt = 0; attempt < Math.min(p.length, 4); attempt++) {
+      const key = pickKey(tried);
+      if (!key) break;
+      tried.add(key);
+
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model,
+          temperature: 0.6,
+          max_tokens: 900,
+          messages,
+        }),
+      });
+
+      markResult(key, res.status, Number(res.headers.get("retry-after")) || undefined);
+
+      if (res.ok) {
+        const json = await res.json();
+        return String(json?.choices?.[0]?.message?.content ?? "");
+      }
+
+      lastStatus = res.status;
+      lastErrText = await res.text().catch(() => "");
+      console.error(`[Groq] ${model} key failed (${res.status}): ${lastErrText}`);
+
+      if (res.status === 400) break;
     }
-    lastStatus = res.status;
-    lastErrText = await res.text().catch(() => "");
-    console.error(`[Groq] Key failed with status ${res.status}: ${lastErrText}`);
-    if (res.status === 400) break; // so'rov xatosi — kalit almashtirish foydasiz
   }
+
   throw new Error(`Groq pool xatosi (${lastStatus || "no keys"}): ${lastErrText.slice(0, 100)}`);
 }
 
@@ -165,7 +194,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rows = await getRecipes();
     const { context, candidates } = buildContext(message, rows);
 
-    // 3) Groq (kalit pool)
+    // 3) Groq (kalit & model pool)
     let reply = "";
     try {
       reply = await callGroq([
@@ -182,7 +211,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const valid = new Map<number, any>(rows.map((r) => [Number(r.id), r]));
     let ids = [...new Set((reply.match(/\[\[(\d+)\]\]/g) ?? []).map((m) => Number(m.replace(/\D/g, ""))))]
       .filter((id) => valid.has(id));
-    if (!ids.length) { // fallback: sarlavha javobda tilga olinganmi
+    if (!ids.length) {
       const low = reply.toLowerCase();
       ids = candidates.filter((r) => low.includes(String(r.title).toLowerCase().slice(0, 18))).map((r) => Number(r.id));
     }
