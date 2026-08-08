@@ -1,4 +1,4 @@
-import { Crown, Lightbulb, Send, Sparkles } from "lucide-react";
+import { Crown, Lightbulb, RotateCcw, Send, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { fetchLifehacks } from "../api/lifehacks";
 import { fetchRecipes } from "../api/recipes";
@@ -6,7 +6,7 @@ import LifehackModal from "../components/lifehacks/LifehackModal";
 import RecipeModal from "../components/recipes/RecipeModal";
 import { useApp } from "../context/AppContext";
 import { askAI, getAIQuota, type AILifehackRef, type AIRecipeRef } from "../lib/ai";
-import { hapticSelection } from "../lib/telegram";
+import { hapticNotification, hapticSelection } from "../lib/telegram";
 import type { Recipe } from "../types";
 import type { Lifehack } from "../types/lifehack";
 
@@ -15,6 +15,33 @@ interface ChatMsg {
   content: string;
   recipes?: AIRecipeRef[];
   lifehacks?: AILifehackRef[];
+}
+
+const CHAT_STORAGE_KEY = "pazanda_ai_chat_session_v1";
+
+function loadSavedChat(): ChatMsg[] {
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const today = new Date().toISOString().slice(0, 10);
+    if (parsed?.day === today && Array.isArray(parsed?.messages)) {
+      return parsed.messages;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function saveChat(messages: ChatMsg[]) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    localStorage.setItem(
+      CHAT_STORAGE_KEY,
+      JSON.stringify({ day: today, messages: messages.slice(-20) }),
+    );
+  } catch {}
 }
 
 const STARTERS = [
@@ -26,7 +53,7 @@ const STARTERS = [
 
 export default function AIChatPage() {
   const { format, openModal } = useApp();
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [messages, setMessages] = useState<ChatMsg[]>(loadSavedChat);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [quota, setQuota] = useState<{ used: number; remaining: number; limit: number; isAdmin?: boolean; model?: string } | null>(null);
@@ -49,8 +76,15 @@ export default function AIChatPage() {
   }, []);
 
   useEffect(() => {
+    saveChat(messages);
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  const clearChat = () => {
+    hapticNotification("success");
+    setMessages([]);
+    localStorage.removeItem(CHAT_STORAGE_KEY);
+  };
 
   const openRecipe = (id: number) => {
     const r = allRecipes.find((x) => x.id === id);
@@ -66,7 +100,6 @@ export default function AIChatPage() {
       hapticSelection();
       setSelectedLifehack(lh);
     } else {
-      // Fallback if not loaded yet
       fetchLifehacks().then((list) => {
         setAllLifehacks(list);
         const item = list.find((x) => x.id === id);
@@ -122,7 +155,7 @@ export default function AIChatPage() {
 
   return (
     <div className="flex h-[calc(100dvh-210px)] flex-col space-y-3">
-      {/* Limit banneri */}
+      {/* Limit & Header banneri */}
       <div className="flex items-center justify-between rounded-3xl border border-[#DB2777]/10 bg-[#DB2777]/5 p-3">
         <div className="flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#DB2777] text-white">
@@ -142,14 +175,25 @@ export default function AIChatPage() {
             </p>
           </div>
         </div>
-        {limitHit ? (
-          <button
-            onClick={() => openModal("premium")}
-            className="flex items-center gap-1 rounded-2xl bg-[#DB2777] px-3 py-2 text-[10px] font-extrabold text-white"
-          >
-            <Crown size={12} /> {format("Premium")}
-          </button>
-        ) : null}
+        <div className="flex items-center gap-1.5">
+          {messages.length > 0 ? (
+            <button
+              onClick={clearChat}
+              title={format("Chatni tozalash")}
+              className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm active:scale-95 transition-transform"
+            >
+              <RotateCcw size={14} />
+            </button>
+          ) : null}
+          {limitHit ? (
+            <button
+              onClick={() => openModal("premium")}
+              className="flex items-center gap-1 rounded-2xl bg-[#DB2777] px-3 py-2 text-[10px] font-extrabold text-white"
+            >
+              <Crown size={12} /> {format("Premium")}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {/* Xabarlar */}
@@ -187,7 +231,7 @@ export default function AIChatPage() {
                 {/* Retseptlar tugmasi */}
                 {m.recipes?.length ? (
                   <div className="mt-2.5 space-y-1.5 pt-1 border-t border-slate-200/60">
-                    <p className="text-[10px] font-extrabold text-slate-400">🍽️ {format("Mos retseptlar")}:</p>
+                    <p className="text-[10px] font-extrabold text-slate-400">🍽️ {format("Retseptni ochish")}:</p>
                     {m.recipes.map((r) => (
                       <button
                         key={r.id}
@@ -209,7 +253,7 @@ export default function AIChatPage() {
                 {/* Lifehacklar tugmasi */}
                 {m.lifehacks?.length ? (
                   <div className="mt-2.5 space-y-1.5 pt-1 border-t border-amber-200/60">
-                    <p className="text-[10px] font-extrabold text-amber-600">💡 {format("Foydali maslahat / Lifehack")}:</p>
+                    <p className="text-[10px] font-extrabold text-amber-600">💡 {format("Foydali sir / Lifehack")}:</p>
                     {m.lifehacks.map((lh) => (
                       <button
                         key={lh.id}

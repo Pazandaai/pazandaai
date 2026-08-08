@@ -65,15 +65,37 @@ function markResult(key: string, status: number, retryAfterSec?: number) {
   }
 }
 
-const SYSTEM_PROMPT = `Sen "Pazanda AI" — o'zbek oilaviy oshxonasining professional va ultra-tezkor yordamchisan.
-QOIDALAR:
-1. Faqat oshxona mavzusida: retsept, masalliq, mahsulot saqlash/lifehack. Boshqa mavzuda: "Kechirasiz, men faqat oshxona bo'yicha yordam beraman 🙂"
-2. O'zbek lotin tilida JUDA QISQA (30–60 so'z), do'stona, emoji bilan javob ber.
-3. RETSEPT TAVSIYA QILSANG: QILINISH BOSQICHLARINI VA MASALLIQLARNI MATNDA BATAFSIL YOZMA! Matnda shunchaki 1 jumlada retseptni maqtang va oxirida [[RECIPE:ID]] belgisini qo'ying. Foydalanuvchi "Ochish" tugmasini bosib to'liq tayyorlanishini ko'radi. TOKEN ISROF QILMA!
-4. LIFEHACK/MASLAHAT TAVSIYA QILSANG — javob oxirida [[LIFEHACK:ID]] belgisini qo'y.
-5. FAQAT bazada bor bo'lgan ID'larni ishlat. Bazada bo'lmasa — faqat 1-2 jumlali qisqa umumiy maslahat ber.`;
+// ===================== SAVOL-JAVOB KESHI (Backend Cache) =====================
+interface CacheEntry {
+  ts: number;
+  reply: string;
+  recipes: any[];
+  lifehacks: any[];
+  model: string;
+}
+const queryCache = new Map<string, CacheEntry>();
 
-// ===================== RAG KESH =====================
+function normalizeQuery(q: string): string {
+  return q
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const SYSTEM_PROMPT = `Sen "Pazanda AI" — o'zbek milliy va oilaviy oshxonasining professional oshpaz yordamchisan.
+MUHIM QOIDALAR:
+1. RETSEPT TAVSIYASI:
+- Agar foydalanuvchi biror taom tayyorlash yoki retsept haqida so'rasa: TAOM TAYYORLASH BOSQICHLARI VA MASALLIQLARNI MATNDA YOZIB O'TIRMA!
+- Shunchaki: "Ushbu taomni tayyorlash bo'yicha bizning to'liq retseptimiz tayyor! Quyidagi tugma orqali bosqichma-bosqich ko'rishingiz mumkin." deb 1-2 jumlada do'stona ayting va javob oxirida [[RECIPE:ID]] belgisini qo'ying.
+2. LIFEHACK VA OSHXONA SIRLARI:
+- Ushbu taomga oid yoki foydali oshxona sirlari (go'shtni yumshatish, qovurish, saqlash, hid ketkazish) bo'lsa: "💡 Foydali maslahat: [qisqa 1 jumla sir]" deb eslatib o'ting va javob oxirida [[LIFEHACK:ID]] belgisini qo'ying.
+3. USLUB:
+- O'zbek lotin tilida, juda ma'noli, chiroyli, do'stona, qisqa (40–70 so'z), o'rinli emoji bilan yozing.
+4. FAQAT bazadagi ID'larni qo'ying. O'ylab topilgan soxta retsept/ID ishlatma.
+5. Oshxonadan tashqari mavzularda: "Kechirasiz, men faqat pazandachilik va oshxona bo'yicha yordam bera olaman 🙂"`;
+
+// ===================== RAG KESH (RETSEPTLAR & LIFEHACKLAR) =====================
 let recipesCache: { ts: number; rows: any[] } | null = null;
 async function getRecipes(): Promise<any[]> {
   if (recipesCache && Date.now() - recipesCache.ts < 5 * 60_000) return recipesCache.rows;
@@ -97,19 +119,19 @@ async function getLifehacks(): Promise<any[]> {
 }
 
 function buildContext(question: string, recipes: any[], lifehacks: any[]) {
-  const words = question.toLowerCase().split(/[^\p{L}\p{N}']+/u).filter((w) => w.length > 3);
+  const words = question.toLowerCase().split(/[^\p{L}\p{N}']+/u).filter((w) => w.length > 2);
   
   const scoredRecipes = recipes.map((r) => {
     const hay = `${r.title} ${r.category ?? ""} ${r.description ?? ""}`.toLowerCase();
     let s = 0;
-    for (const w of words) if (hay.includes(w)) s += w.length > 5 ? 2 : 1;
+    for (const w of words) if (hay.includes(w)) s += w.length > 4 ? 2 : 1;
     return { r, s };
   }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 3);
 
   const scoredLifehacks = lifehacks.map((lh) => {
     const hay = `${lh.title} ${lh.category ?? ""} ${lh.content ?? ""}`.toLowerCase();
     let s = 0;
-    for (const w of words) if (hay.includes(w)) s += w.length > 5 ? 2 : 1;
+    for (const w of words) if (hay.includes(w)) s += w.length > 4 ? 2 : 1;
     return { lh, s };
   }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 3);
 
@@ -118,12 +140,13 @@ function buildContext(question: string, recipes: any[], lifehacks: any[]) {
   }).join("\n");
 
   const lifehackText = scoredLifehacks.map(({ lh }) => {
-    return `[LIFEHACK:${lh.id}] ${lh.title} (${lh.category ?? "-"})`;
+    const shortContent = String(lh.content ?? "").slice(0, 100);
+    return `[LIFEHACK:${lh.id}] ${lh.title} (${lh.category ?? "-"}): ${shortContent}`;
   }).join("\n");
 
   let context = "";
-  if (recipeText) context += `RETSEPTLAR:\n${recipeText}\n\n`;
-  if (lifehackText) context += `LIFEHACKLAR:\n${lifehackText}`;
+  if (recipeText) context += `RETSEPTLAR BAZASI:\n${recipeText}\n\n`;
+  if (lifehackText) context += `LIFEHACKLAR BAZASI:\n${lifehackText}`;
 
   return {
     context,
@@ -132,17 +155,16 @@ function buildContext(question: string, recipes: any[], lifehacks: any[]) {
   };
 }
 
-// ===================== GROQ CHAQIRUV (SMART FAILOVER CHAIN) =====================
+// ===================== GROQ CHAQIRUV =====================
 async function callGroq(messages: { role: string; content: string }[]): Promise<{ content: string; modelUsed: string }> {
   const p = getPool();
   if (!p.length) throw new Error("GROQ_API_KEYS sozlanmagan");
 
-  const primaryModel = getEnv("GROQ_MODEL") || "groq/compound-mini";
+  const primaryModel = getEnv("GROQ_MODEL") || "llama-3.3-70b-versatile";
   const modelsToTry = [primaryModel];
-  if (!modelsToTry.includes("groq/compound-mini")) modelsToTry.push("groq/compound-mini");
+  if (!modelsToTry.includes("llama-3.3-70b-versatile")) modelsToTry.push("llama-3.3-70b-versatile");
   if (!modelsToTry.includes("llama-3.1-8b-instant")) modelsToTry.push("llama-3.1-8b-instant");
   if (!modelsToTry.includes("openai/gpt-oss-120b")) modelsToTry.push("openai/gpt-oss-120b");
-  if (!modelsToTry.includes("llama-3.3-70b-versatile")) modelsToTry.push("llama-3.3-70b-versatile");
 
   let lastStatus = 0;
   let lastErrText = "";
@@ -160,7 +182,7 @@ async function callGroq(messages: { role: string; content: string }[]): Promise<
         body: JSON.stringify({
           model,
           temperature: 0.5,
-          max_tokens: 450,
+          max_tokens: 350,
           messages,
         }),
       });
@@ -194,7 +216,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       user_id: `eq.${g.userId}`, day: `eq.${todayStr()}`, select: "used", limit: 1,
     }).catch(() => []);
     const used = rows?.[0]?.used ?? 0;
-    return res.status(200).json({ ok: true, used, remaining: Math.max(0, limit - used), limit, isAdmin, model: getEnv("GROQ_MODEL") || "llama-3.1-8b-instant" });
+    return res.status(200).json({ ok: true, used, remaining: Math.max(0, limit - used), limit, isAdmin, model: getEnv("GROQ_MODEL") || "llama-3.3-70b-versatile" });
   }
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
   const g = guardPublic(req);
@@ -217,12 +239,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // 2) RAG kontekst
+    // 2) Backend Query Cache Tekshiruvi (Aynan bir xil savollar uchun tezkor kesh)
+    const normKey = normalizeQuery(message);
+    const cached = queryCache.get(normKey);
+    if (cached && Date.now() - cached.ts < 24 * 3600_000) {
+      const usedRows = await supabaseFetch("GET", "ai_usage", {
+        user_id: `eq.${g.userId}`, day: `eq.${todayStr()}`, select: "used", limit: 1,
+      }).catch(() => []);
+      const used = usedRows?.[0]?.used ?? 0;
+      return res.status(200).json({
+        ok: true,
+        reply: cached.reply,
+        recipes: cached.recipes,
+        lifehacks: cached.lifehacks,
+        used,
+        remaining: Math.max(0, limit - used),
+        limit,
+        isAdmin,
+        model: cached.model,
+      });
+    }
+
+    // 3) RAG kontekst (Retseptlar + Lifehacklar)
     const [recipeRows, lifehackRows] = await Promise.all([getRecipes(), getLifehacks()]);
     const { context, candidateRecipes, candidateLifehacks } = buildContext(message, recipeRows, lifehackRows);
 
-    // 3) Groq AI Chaqiruv
-    let replyObj = { content: "", modelUsed: "llama-3.1-8b-instant" };
+    // 4) Groq AI Chaqiruv
+    let replyObj = { content: "", modelUsed: "llama-3.3-70b-versatile" };
     try {
       replyObj = await callGroq([
         { role: "system", content: SYSTEM_PROMPT + (context ? `\n\nMA'LUMOT BAZASI:\n${context}` : "") },
@@ -237,7 +280,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const reply = replyObj.content;
     const modelUsed = replyObj.modelUsed;
 
-    // 4) [[RECIPE:ID]] va [[LIFEHACK:ID]] belgilarni ajratib olish
+    // 5) [[RECIPE:ID]] va [[LIFEHACK:ID]] belgilarni ajratib olish
     const validRecipes = new Map<number, any>(recipeRows.map((r) => [Number(r.id), r]));
     const validLifehacks = new Map<number, any>(lifehackRows.map((lh) => [Number(lh.id), lh]));
 
@@ -268,6 +311,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .replace(/\[\[LIFEHACK:\d+\]\]/g, "")
       .replace(/\[(?:RECIPE|LIFEHACK):\d+\]/g, "")
       .trim();
+
+    // Keshga saqlash (24 soat)
+    if (cleanReply && normKey.length > 5) {
+      queryCache.set(normKey, {
+        ts: Date.now(),
+        reply: cleanReply,
+        recipes,
+        lifehacks,
+        model: modelUsed,
+      });
+      if (queryCache.size > 2000) queryCache.clear();
+    }
 
     const usedRows = await supabaseFetch("GET", "ai_usage", {
       user_id: `eq.${g.userId}`, day: `eq.${todayStr()}`, select: "used", limit: 1,
