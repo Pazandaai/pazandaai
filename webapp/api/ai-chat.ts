@@ -137,9 +137,10 @@ async function callGroq(messages: { role: string; content: string }[]): Promise<
   const p = getPool();
   if (!p.length) throw new Error("GROQ_API_KEYS sozlanmagan");
 
-  const primaryModel = getEnv("GROQ_MODEL") || "llama-3.1-8b-instant";
+  const primaryModel = getEnv("GROQ_MODEL") || "groq/compound-mini";
   const modelsToTry = [primaryModel];
-  if (primaryModel !== "llama-3.1-8b-instant") modelsToTry.push("llama-3.1-8b-instant");
+  if (!modelsToTry.includes("groq/compound-mini")) modelsToTry.push("groq/compound-mini");
+  if (!modelsToTry.includes("llama-3.1-8b-instant")) modelsToTry.push("llama-3.1-8b-instant");
   if (!modelsToTry.includes("openai/gpt-oss-120b")) modelsToTry.push("openai/gpt-oss-120b");
   if (!modelsToTry.includes("llama-3.3-70b-versatile")) modelsToTry.push("llama-3.3-70b-versatile");
 
