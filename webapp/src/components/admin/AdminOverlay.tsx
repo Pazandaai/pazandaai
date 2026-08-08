@@ -106,6 +106,7 @@ function linesToSteps(text: string): any[] {
 
 const TABS = [
   { id: "stats", label: "📊 Statistika" },
+  { id: "banner", label: "🖼 Banner" },
   { id: "users", label: "👥 Foydalanuvchilar" },
   { id: "payments", label: "💳 To'lovlar" },
   { id: "broadcast", label: "📣 Broadcast" },
@@ -113,7 +114,6 @@ const TABS = [
   { id: "lifehacks", label: "💡 Lifehacklar" },
   { id: "cats", label: "📁 Kategoriyalar" },
   { id: "products", label: "🧺 Mahsulotlar" },
-  { id: "banner", label: "🖼 Banner" },
 ];
 
 function AdminInner() {
