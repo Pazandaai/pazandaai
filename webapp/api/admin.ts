@@ -79,7 +79,6 @@ export default async function handler(
       // STATISTIKA & TOP RETSEPTLAR
       // =====================
       case "stats": {
-        const nowIso = new Date().toISOString();
         const [total_users, premium_users, banned_users, pending_payments, total_recipes, total_lifehacks] =
           await Promise.all([
             supabaseFetch("GET", "users", { select: "telegram_id", limit: 10000 }).then((r) => r?.length ?? 0).catch(() => 0),
