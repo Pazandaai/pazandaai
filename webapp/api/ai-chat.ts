@@ -69,7 +69,7 @@ let recipesCache: { ts: number; rows: any[] } | null = null;
 async function getRecipes(): Promise<any[]> {
   if (recipesCache && Date.now() - recipesCache.ts < 5 * 60_000) return recipesCache.rows;
   const rows = await supabaseFetch("GET", "recipes", {
-    select: "id,title,category,description,ingredients,emoji,image_url",
+    select: "id,title,category,description,ingredients,image_url",
     is_published: "eq.true", limit: 500,
   });
   recipesCache = { ts: Date.now(), rows: rows ?? [] };
