@@ -1,22 +1,27 @@
-import { Crown, Send, Sparkles } from "lucide-react";
+import { Crown, Lightbulb, Send, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { fetchLifehacks } from "../api/lifehacks";
 import { fetchRecipes } from "../api/recipes";
+import LifehackModal from "../components/lifehacks/LifehackModal";
 import RecipeModal from "../components/recipes/RecipeModal";
 import { useApp } from "../context/AppContext";
-import { askAI, getAIQuota, type AIRecipeRef } from "../lib/ai";
+import { askAI, getAIQuota, type AILifehackRef, type AIRecipeRef } from "../lib/ai";
 import { hapticSelection } from "../lib/telegram";
 import type { Recipe } from "../types";
+import type { Lifehack } from "../types/lifehack";
 
 interface ChatMsg {
   role: "user" | "assistant";
   content: string;
   recipes?: AIRecipeRef[];
+  lifehacks?: AILifehackRef[];
 }
 
 const STARTERS = [
   "Tuxum va pomidor bilan nima pishiraman?",
+  "Go'shtni uzoq vaqt yangi saqlash siri nimada?",
   "Palov guruchi dona-dona bo'lishi uchun nima qilay?",
-  "20 daqiqalik tez shirinlik tavsiya qil",
+  "Oshxona hidini tez ketkazish bo'yicha maslahat ber",
 ];
 
 export default function AIChatPage() {
@@ -24,15 +29,23 @@ export default function AIChatPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [quota, setQuota] = useState<{ used: number; limit: number } | null>(null);
+  const [quota, setQuota] = useState<{ used: number; remaining: number; limit: number } | null>(null);
   const [limitHit, setLimitHit] = useState(false);
   const [allRecipes, setAllRecipes] = useState<Recipe[]>([]);
-  const [selected, setSelected] = useState<Recipe | null>(null);
+  const [allLifehacks, setAllLifehacks] = useState<Lifehack[]>([]);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [selectedLifehack, setSelectedLifehack] = useState<Lifehack | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getAIQuota().then(setQuota);
+    getAIQuota().then((q) => {
+      if (q) {
+        setQuota(q);
+        if (q.remaining <= 0 && q.limit < 1000) setLimitHit(true);
+      }
+    });
     fetchRecipes().then(setAllRecipes).catch(() => {});
+    fetchLifehacks().then(setAllLifehacks).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -43,7 +56,22 @@ export default function AIChatPage() {
     const r = allRecipes.find((x) => x.id === id);
     if (r) {
       hapticSelection();
-      setSelected(r);
+      setSelectedRecipe(r);
+    }
+  };
+
+  const openLifehack = (id: number) => {
+    const lh = allLifehacks.find((x) => x.id === id);
+    if (lh) {
+      hapticSelection();
+      setSelectedLifehack(lh);
+    } else {
+      // Fallback if not loaded yet
+      fetchLifehacks().then((list) => {
+        setAllLifehacks(list);
+        const item = list.find((x) => x.id === id);
+        if (item) setSelectedLifehack(item);
+      });
     }
   };
 
@@ -58,11 +86,17 @@ export default function AIChatPage() {
       const history = messages.slice(-6).map((m) => ({ role: m.role, content: m.content }));
       const r = await askAI(text, history);
       if (r.ok) {
-        setMessages((p) => [...p, { role: "assistant", content: r.reply ?? "...", recipes: r.recipes }]);
-        if (r.used != null) setQuota({ used: r.used, limit: r.limit ?? 0 });
-        if (r.limit && r.used != null && r.used >= r.limit) setLimitHit(true);
+        setMessages((p) => [
+          ...p,
+          { role: "assistant", content: r.reply ?? "...", recipes: r.recipes, lifehacks: r.lifehacks },
+        ]);
+        if (r.used != null && r.limit != null) {
+          const remaining = r.remaining ?? Math.max(0, r.limit - r.used);
+          setQuota({ used: r.used, remaining, limit: r.limit });
+          if (remaining <= 0 && r.limit < 1000) setLimitHit(true);
+        }
       } else if (r.error === "limit") {
-        setQuota({ used: r.used ?? 0, limit: r.limit ?? 0 });
+        setQuota((p) => (p ? { ...p, remaining: 0 } : { used: r.used ?? 5, remaining: 0, limit: r.limit ?? 5 }));
         setLimitHit(true);
       } else {
         const detail = r.error ? ` (${r.error})` : "";
@@ -78,6 +112,8 @@ export default function AIChatPage() {
     }
   };
 
+  const remainingCount = quota ? Math.max(0, quota.limit - quota.used) : null;
+
   return (
     <div className="flex h-[calc(100dvh-210px)] flex-col space-y-3">
       {/* Limit banneri */}
@@ -87,9 +123,13 @@ export default function AIChatPage() {
             <Sparkles size={16} />
           </span>
           <div>
-            <p className="text-xs font-extrabold text-slate-900">{format("AI Oshpaz")}</p>
+            <p className="text-xs font-extrabold text-slate-900">{format("AI Oshpaz (openai/gpt-oss-120b)")}</p>
             <p className="text-[10px] font-semibold text-slate-500">
-              {quota ? `${format("Bugun")}: ${Math.min(quota.used, quota.limit)}/${quota.limit}` : format("Yuklanmoqda...")}
+              {quota
+                ? quota.limit >= 1000
+                  ? format("Admin: Cheksiz so'rovlar ✨")
+                  : `${format("Qolgan so'rovlar")}: ${remainingCount}/${quota.limit} (${format("Ishlatildi")}: ${quota.used})`
+                : format("Yuklanmoqda...")}
             </p>
           </div>
         </div>
@@ -108,8 +148,8 @@ export default function AIChatPage() {
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center p-4">
             <span className="text-4xl">👨‍🍳</span>
-            <p className="max-w-[250px] text-xs font-semibold text-slate-500 leading-5">
-              {format("Salom! Men Pazanda AI oshpazman. Bazadagi 100+ retsept asosida tavsiya beraman — tayyor retseptni bir bosishda ochasiz.")}
+            <p className="max-w-[260px] text-xs font-semibold text-slate-500 leading-5">
+              {format("Salom! Men Pazanda AI oshpazman. Bazadagi retseptlar va maslahat/lifehacklar asosida javob beraman!")}
             </p>
             <div className="flex flex-wrap justify-center gap-1.5 pt-2">
               {STARTERS.map((s) => (
@@ -134,8 +174,11 @@ export default function AIChatPage() {
                 <p className="whitespace-pre-line text-sm leading-5">
                   {m.role === "assistant" ? format(m.content) : m.content}
                 </p>
+
+                {/* Retseptlar tugmasi */}
                 {m.recipes?.length ? (
                   <div className="mt-2.5 space-y-1.5 pt-1 border-t border-slate-200/60">
+                    <p className="text-[10px] font-extrabold text-slate-400">🍽️ {format("Mos retseptlar")}:</p>
                     {m.recipes.map((r) => (
                       <button
                         key={r.id}
@@ -148,6 +191,30 @@ export default function AIChatPage() {
                         </span>
                         <span className="text-[10px] font-extrabold text-[#DB2777]">
                           {format("Ochish")} →
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                {/* Lifehacklar tugmasi */}
+                {m.lifehacks?.length ? (
+                  <div className="mt-2.5 space-y-1.5 pt-1 border-t border-amber-200/60">
+                    <p className="text-[10px] font-extrabold text-amber-600">💡 {format("Foydali maslahat / Lifehack")}:</p>
+                    {m.lifehacks.map((lh) => (
+                      <button
+                        key={lh.id}
+                        onClick={() => openLifehack(lh.id)}
+                        className="flex w-full items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-left shadow-sm active:scale-98 transition-transform"
+                      >
+                        <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-200 text-amber-800">
+                          <Lightbulb size={13} />
+                        </span>
+                        <span className="flex-1 truncate text-xs font-bold text-slate-800">
+                          {format(lh.title)}
+                        </span>
+                        <span className="text-[10px] font-extrabold text-amber-700">
+                          {format("O'qish")} →
                         </span>
                       </button>
                     ))}
@@ -185,7 +252,8 @@ export default function AIChatPage() {
         </p>
       ) : null}
 
-      <RecipeModal recipe={selected} onClose={() => setSelected(null)} />
+      <RecipeModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} />
+      <LifehackModal lifehack={selectedLifehack} onClose={() => setSelectedLifehack(null)} />
     </div>
   );
 }

@@ -8,11 +8,21 @@ export interface AIRecipeRef {
   category?: string | null;
 }
 
+export interface AILifehackRef {
+  id: number;
+  title: string;
+  category?: string | null;
+  content?: string | null;
+  image_url?: string | null;
+}
+
 export interface AIReply {
   ok: boolean;
   reply?: string;
   recipes?: AIRecipeRef[];
+  lifehacks?: AILifehackRef[];
   used?: number;
+  remaining?: number;
   limit?: number;
   error?: string;
   isPremium?: boolean;
@@ -30,11 +40,11 @@ export async function askAI(
   return r.json();
 }
 
-export async function getAIQuota(): Promise<{ used: number; limit: number } | null> {
+export async function getAIQuota(): Promise<{ used: number; remaining: number; limit: number } | null> {
   try {
     const r = await fetch(`${API_BASE}/api/ai-chat`, { headers: tgHeaders() });
     const j = await r.json();
-    return j?.ok ? { used: j.used, limit: j.limit } : null;
+    return j?.ok ? { used: j.used, remaining: j.remaining ?? Math.max(0, j.limit - j.used), limit: j.limit } : null;
   } catch {
     return null;
   }
