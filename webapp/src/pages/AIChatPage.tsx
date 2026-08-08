@@ -29,7 +29,7 @@ export default function AIChatPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [quota, setQuota] = useState<{ used: number; remaining: number; limit: number } | null>(null);
+  const [quota, setQuota] = useState<{ used: number; remaining: number; limit: number; isAdmin?: boolean; model?: string } | null>(null);
   const [limitHit, setLimitHit] = useState(false);
   const [allRecipes, setAllRecipes] = useState<Recipe[]>([]);
   const [allLifehacks, setAllLifehacks] = useState<Lifehack[]>([]);
@@ -92,7 +92,13 @@ export default function AIChatPage() {
         ]);
         if (r.used != null && r.limit != null) {
           const remaining = r.remaining ?? Math.max(0, r.limit - r.used);
-          setQuota({ used: r.used, remaining, limit: r.limit });
+          setQuota((p) => ({
+            used: r.used!,
+            remaining,
+            limit: r.limit!,
+            isAdmin: r.isAdmin ?? p?.isAdmin,
+            model: r.model ?? p?.model,
+          }));
           if (remaining <= 0 && r.limit < 1000) setLimitHit(true);
         }
       } else if (r.error === "limit") {
@@ -123,12 +129,15 @@ export default function AIChatPage() {
             <Sparkles size={16} />
           </span>
           <div>
-            <p className="text-xs font-extrabold text-slate-900">{format("AI Oshpaz (openai/gpt-oss-120b)")}</p>
+            <p className="text-xs font-extrabold text-slate-900">
+              {format("AI Oshpaz")}
+              {quota?.isAdmin && quota?.model ? ` (${quota.model})` : ""}
+            </p>
             <p className="text-[10px] font-semibold text-slate-500">
               {quota
                 ? quota.limit >= 1000
                   ? format("Admin: Cheksiz so'rovlar ✨")
-                  : `${format("Qolgan so'rovlar")}: ${remainingCount}/${quota.limit} (${format("Ishlatildi")}: ${quota.used})`
+                  : `${format("Qolgan so'rovlar")}: ${remainingCount}/${quota.limit}`
                 : format("Yuklanmoqda...")}
             </p>
           </div>

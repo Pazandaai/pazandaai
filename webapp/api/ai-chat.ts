@@ -65,16 +65,15 @@ function markResult(key: string, status: number, retryAfterSec?: number) {
   }
 }
 
-const SYSTEM_PROMPT = `Sen "Pazanda AI" — o'zbek oilaviy oshxonasining professional yordamchisan.
+const SYSTEM_PROMPT = `Sen "Pazanda AI" — o'zbek oilaviy oshxonasining professional va ultra-tezkor yordamchisan.
 QOIDALAR:
-1. Faqat oshxona va pazandachilik mavzusida: retsept, masalliq, texnika, mahsulotlarni saqlash/lifehacklar, parhez. Boshqa mavzuda: "Kechirasiz, men faqat oshxona bo'yicha yordam beraman 🙂"
-2. Lotin o'zbek tilida, qisqa (120–180 so'z), do'stona, emoji bilan.
-3. MA'LUMOT BAZASIdagi retseptni tavsiya qilsang — javob OXIRIDA belgi qo'y: [[RECIPE:ID]] (masalan [[RECIPE:12]]).
-4. MA'LUMOT BAZASIdagi lifehack/maslahatni (saqlash, tozalash, sirlar) tavsiya qilsang — javob OXIRIDA belgi qo'y: [[LIFEHACK:ID]] (masalan [[LIFEHACK:5]]).
-5. FAQAT bazadagi ID'larni ishlat, o'ylab topma. Mos kontent bo'lmasa belgi qo'yma.
-6. Xavfsizlik: go'shtni to'liq pishirish, gigiena eslatmalari.`;
+1. Faqat oshxona mavzusida: retsept, masalliq, mahsulot saqlash/lifehack. Boshqa mavzuda: "Kechirasiz, men faqat oshxona bo'yicha yordam beraman 🙂"
+2. O'zbek lotin tilida JUDA QISQA (30–60 so'z), do'stona, emoji bilan javob ber.
+3. RETSEPT TAVSIYA QILSANG: QILINISH BOSQICHLARINI VA MASALLIQLARNI MATNDA BATAFSIL YOZMA! Matnda shunchaki 1 cümlada retseptni maqtang va oxirida [[RECIPE:ID]] belgisini qo'ying. Foydalanuvchi "Ochish" tugmasini bosib to'liq tayyorlanishini ko'radi. TOKEN ISROF QILMA!
+4. LIFEHACK/MASLAHAT TAVSIYA QILSANG — javob oxirida [[LIFEHACK:ID]] belgisini qo'y.
+5. FAQAT bazada bor bo'lgan ID'larni ishlat. Bazada bo'lmasa — faqat 1-2 jumlali qisqa umumiy maslahat ber.`;
 
-// ===================== RAG KESH (RETSEPTLAR & LIFEHACKLAR) =====================
+// ===================== RAG KESH =====================
 let recipesCache: { ts: number; rows: any[] } | null = null;
 async function getRecipes(): Promise<any[]> {
   if (recipesCache && Date.now() - recipesCache.ts < 5 * 60_000) return recipesCache.rows;
@@ -100,7 +99,6 @@ async function getLifehacks(): Promise<any[]> {
 function buildContext(question: string, recipes: any[], lifehacks: any[]) {
   const words = question.toLowerCase().split(/[^\p{L}\p{N}']+/u).filter((w) => w.length > 3);
   
-  // 1) Retseptlar reytingi
   const scoredRecipes = recipes.map((r) => {
     const hay = `${r.title} ${r.category ?? ""} ${r.description ?? ""}`.toLowerCase();
     let s = 0;
@@ -108,7 +106,6 @@ function buildContext(question: string, recipes: any[], lifehacks: any[]) {
     return { r, s };
   }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 3);
 
-  // 2) Lifehacklar reytingi
   const scoredLifehacks = lifehacks.map((lh) => {
     const hay = `${lh.title} ${lh.category ?? ""} ${lh.content ?? ""}`.toLowerCase();
     let s = 0;
@@ -117,30 +114,22 @@ function buildContext(question: string, recipes: any[], lifehacks: any[]) {
   }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 3);
 
   const recipeText = scoredRecipes.map(({ r }) => {
-    const ings = safeArr(r.ingredients).map((i: any) => i?.name).filter(Boolean).slice(0, 10).join(", ");
-    return `[RECIPE:${r.id}] ${r.title} (${r.category ?? "-"}) — ${r.description ?? ""} Masalliqlar: ${ings}`;
+    return `[RECIPE:${r.id}] ${r.title} (${r.category ?? "-"})`;
   }).join("\n");
 
   const lifehackText = scoredLifehacks.map(({ lh }) => {
-    const shortContent = String(lh.content ?? "").slice(0, 120);
-    return `[LIFEHACK:${lh.id}] ${lh.title} (${lh.category ?? "-"}) — ${shortContent}`;
+    return `[LIFEHACK:${lh.id}] ${lh.title} (${lh.category ?? "-"})`;
   }).join("\n");
 
   let context = "";
   if (recipeText) context += `RETSEPTLAR:\n${recipeText}\n\n`;
-  if (lifehackText) context += `LIFEHACKLAR / MASLAHATLAR:\n${lifehackText}`;
+  if (lifehackText) context += `LIFEHACKLAR:\n${lifehackText}`;
 
   return {
     context,
     candidateRecipes: scoredRecipes.map((x) => x.r),
     candidateLifehacks: scoredLifehacks.map((x) => x.lh),
   };
-}
-
-function safeArr(v: unknown): any[] {
-  if (Array.isArray(v)) return v;
-  if (typeof v === "string") { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
-  return [];
 }
 
 // ===================== GROQ CHAQIRUV =====================
@@ -168,8 +157,8 @@ async function callGroq(messages: { role: string; content: string }[]): Promise<
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         body: JSON.stringify({
           model,
-          temperature: 0.6,
-          max_tokens: 900,
+          temperature: 0.5,
+          max_tokens: 450,
           messages,
         }),
       });
@@ -197,12 +186,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "GET") {
     const g = guardPublic(req);
     if (!g.ok) return res.status(g.status).json({ ok: false, error: g.error });
-    const { limit } = await getLimits(g.userId);
+    const { isAdmin, limit } = await getLimits(g.userId);
     const rows = await supabaseFetch("GET", "ai_usage", {
       user_id: `eq.${g.userId}`, day: `eq.${todayStr()}`, select: "used", limit: 1,
     }).catch(() => []);
     const used = rows?.[0]?.used ?? 0;
-    return res.status(200).json({ ok: true, used, remaining: Math.max(0, limit - used), limit });
+    return res.status(200).json({ ok: true, used, remaining: Math.max(0, limit - used), limit, isAdmin, model: getEnv("GROQ_MODEL") || "openai/gpt-oss-120b" });
   }
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
   const g = guardPublic(req);
@@ -221,11 +210,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const c = await supabaseFetch("POST", "rpc/ai_try_consume", {}, { uid: g.userId, max_limit: limit }).catch(() => null);
       if (c) {
         const r0 = Array.isArray(c) ? c[0] : c;
-        if (r0 && r0.ok === false) return res.status(429).json({ ok: false, error: "limit", used: r0?.used ?? limit, remaining: 0, limit, isPremium });
+        if (r0 && r0.ok === false) return res.status(429).json({ ok: false, error: "limit", used: r0?.used ?? limit, remaining: 0, limit, isPremium, isAdmin });
       }
     }
 
-    // 2) RAG kontekst (Retseptlar + Lifehacklar)
+    // 2) RAG kontekst
     const [recipeRows, lifehackRows] = await Promise.all([getRecipes(), getLifehacks()]);
     const { context, candidateRecipes, candidateLifehacks } = buildContext(message, recipeRows, lifehackRows);
 
@@ -252,7 +241,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let lifehackIds = [...new Set((reply.match(/\[\[LIFEHACK:(\d+)\]\]/g) ?? []).map((m) => Number(m.replace(/\D/g, ""))))]
       .filter((id) => validLifehacks.has(id));
 
-    // Fallback: sarlavha matnda kelsa
     if (!recipeIds.length && !lifehackIds.length) {
       const low = reply.toLowerCase();
       recipeIds = candidateRecipes.filter((r) => low.includes(String(r.title).toLowerCase().slice(0, 18))).map((r) => Number(r.id));
@@ -288,6 +276,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       used,
       remaining: Math.max(0, limit - used),
       limit,
+      isAdmin,
+      model: getEnv("GROQ_MODEL") || "openai/gpt-oss-120b",
     });
   } catch (e: any) {
     console.error("[ai-chat]", e);
