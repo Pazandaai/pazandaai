@@ -12,6 +12,7 @@ import { AppProvider, useApp } from "./context/AppContext";
 import { registerBack } from "./lib/back";
 import { useBackGuard } from "./lib/useBackGuard";
 import HomePage from "./pages/HomePage";
+import AIChatPage from "./pages/AIChatPage";
 import LifehacksPage from "./pages/LifehacksPage";
 import ProfilePage from "./pages/ProfilePage";
 import RecipesPage from "./pages/RecipesPage";
@@ -54,6 +55,8 @@ function AppContent() {
               {activeTab === "recipes" ? <RecipesPage /> : null}
 
               {activeTab === "lifehacks" ? <LifehacksPage /> : null}
+
+              {activeTab === "ai" ? <AIChatPage /> : null}
 
               {activeTab === "profile" ? <ProfilePage /> : null}
             </motion.div>

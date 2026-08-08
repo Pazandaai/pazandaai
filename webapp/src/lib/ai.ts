@@ -1,0 +1,41 @@
+import { API_BASE, tgHeaders } from "./api";
+
+export interface AIRecipeRef {
+  id: number;
+  title: string;
+  emoji?: string | null;
+  image_url?: string | null;
+  category?: string | null;
+}
+
+export interface AIReply {
+  ok: boolean;
+  reply?: string;
+  recipes?: AIRecipeRef[];
+  used?: number;
+  limit?: number;
+  error?: string;
+  isPremium?: boolean;
+}
+
+export async function askAI(
+  message: string,
+  history: { role: string; content: string }[],
+): Promise<AIReply> {
+  const r = await fetch(`${API_BASE}/api/ai-chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...tgHeaders() },
+    body: JSON.stringify({ message, history }),
+  });
+  return r.json();
+}
+
+export async function getAIQuota(): Promise<{ used: number; limit: number } | null> {
+  try {
+    const r = await fetch(`${API_BASE}/api/ai-chat`, { headers: tgHeaders() });
+    const j = await r.json();
+    return j?.ok ? { used: j.used, limit: j.limit } : null;
+  } catch {
+    return null;
+  }
+}

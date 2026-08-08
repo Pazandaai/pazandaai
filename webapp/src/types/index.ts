@@ -1,6 +1,6 @@
 export type Script = "latn" | "kyr";
 
-export type TabId = "home" | "recipes" | "lifehacks" | "profile";
+export type TabId = "home" | "recipes" | "lifehacks" | "ai" | "profile";
 
 export type DifficultyKey = "easy" | "medium" | "hard";
 

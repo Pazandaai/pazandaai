@@ -1,4 +1,4 @@
-import { BookOpen, Home, Lightbulb, User, type LucideIcon } from "lucide-react";
+import { BookOpen, Home, Lightbulb, Sparkles, User, type LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
@@ -13,6 +13,7 @@ const TABS: TabItem[] = [
   { id: "home", icon: Home, labelKey: "tabHome" },
   { id: "recipes", icon: BookOpen, labelKey: "tabRecipes" },
   { id: "lifehacks", icon: Lightbulb, labelKey: "tabLifehacks" },
+  { id: "ai", icon: Sparkles, labelKey: "tabAI" },
   { id: "profile", icon: User, labelKey: "tabProfile" },
 ];
 
@@ -50,7 +51,7 @@ export default function BottomNav() {
     >
       <div className="mx-auto w-full max-w-md px-4 pb-4">
         <div className="rounded-3xl border border-white/50 bg-white/85 shadow-[0_18px_40px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-150">
-          <div className="grid grid-cols-4 px-2 py-2">
+          <div className="grid grid-cols-5 px-2 py-2">
             {TABS.map((tab) => {
               const active = activeTab === tab.id;
               const Icon = tab.icon;

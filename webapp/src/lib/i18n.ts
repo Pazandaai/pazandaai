@@ -8,6 +8,7 @@ const STRINGS = {
   tabHome: "Bosh sahifa",
   tabRecipes: "Retseptlar",
   tabLifehacks: "Lifehacklar",
+  tabAI: "AI Oshpaz",
   tabProfile: "Profil",
 
   scriptToggle: "Tilni almashtirish",
