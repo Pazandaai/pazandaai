@@ -43,6 +43,10 @@ async def admin_command(message: Message) -> None:
     )
 
 
+import time
+
+_STATS_CACHE: dict[str, Any] = {"ts": 0.0, "v": None}
+
 @router.callback_query(F.data == "admin:stats")
 async def admin_stats(callback: CallbackQuery) -> None:
     if not is_admin(callback.from_user.id):
@@ -51,10 +55,16 @@ async def admin_stats(callback: CallbackQuery) -> None:
 
     lang = await get_lang(callback.from_user.id)
 
-    total_users = await db.count_users()
-    premium_users = await db.count_premium_active()
-    pending_payments = await db.count_pending_requests()
-    banned_users = await db.count_banned()
+    now = time.time()
+    if _STATS_CACHE["v"] is not None and now - _STATS_CACHE["ts"] < 60.0:
+        total_users, premium_users, pending_payments, banned_users = _STATS_CACHE["v"]
+    else:
+        total_users = await db.count_users()
+        premium_users = await db.count_premium_active()
+        pending_payments = await db.count_pending_requests()
+        banned_users = await db.count_banned()
+        _STATS_CACHE["ts"] = now
+        _STATS_CACHE["v"] = (total_users, premium_users, pending_payments, banned_users)
 
     text = (
         f"<b>📊 {t(lang, 'admin_stats')}</b>\n\n"

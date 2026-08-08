@@ -64,28 +64,57 @@ export default async function handler(
       return res.status(403).json({ ok: false, error: "Admin only" });
     }
 
+    if (!["stats", "top_recipes", "list_users"].includes(action)) {
+      await supabaseFetch(
+        "POST",
+        "admin_logs",
+        {},
+        { admin_id: user.id, action: String(action), payload: payload ?? {} },
+        "return=minimal",
+      ).catch(() => {});
+    }
+
     switch (action) {
       // =====================
-      // STATISTIKA
+      // STATISTIKA & TOP RETSEPTLAR
       // =====================
       case "stats": {
-        const [allUsers, allPending, allRecipes, allLifehacks] = await Promise.all([
-          supabaseFetch("GET", "users", { select: "telegram_id,is_premium,is_banned", limit: 10000 }).catch(() => []),
-          supabaseFetch("GET", "premium_requests", { select: "id", status: "eq.pending", limit: 10000 }).catch(() => []),
-          supabaseFetch("GET", "recipes", { select: "id", limit: 10000 }).catch(() => []),
-          supabaseFetch("GET", "lifehacks", { select: "id", limit: 10000 }).catch(() => []),
-        ]);
+        const nowIso = new Date().toISOString();
+        const [total_users, premium_users, banned_users, pending_payments, total_recipes, total_lifehacks] =
+          await Promise.all([
+            supabaseFetch("GET", "users", { select: "telegram_id", limit: 10000 }).then((r) => r?.length ?? 0).catch(() => 0),
+            supabaseFetch("GET", "users", { select: "telegram_id", is_premium: "eq.true", limit: 10000 }).then((r) => r?.length ?? 0).catch(() => 0),
+            supabaseFetch("GET", "users", { select: "telegram_id", is_banned: "eq.true", limit: 10000 }).then((r) => r?.length ?? 0).catch(() => 0),
+            supabaseFetch("GET", "premium_requests", { select: "id", status: "eq.pending", limit: 10000 }).then((r) => r?.length ?? 0).catch(() => 0),
+            supabaseFetch("GET", "recipes", { select: "id", limit: 10000 }).then((r) => r?.length ?? 0).catch(() => 0),
+            supabaseFetch("GET", "lifehacks", { select: "id", limit: 10000 }).then((r) => r?.length ?? 0).catch(() => 0),
+          ]);
         return res.status(200).json({
           ok: true,
           data: {
-            total_users: allUsers.length,
-            premium_users: allUsers.filter((u: any) => u.is_premium).length,
-            banned_users: allUsers.filter((u: any) => u.is_banned).length,
-            pending_payments: allPending.length,
-            total_recipes: allRecipes.length,
-            total_lifehacks: allLifehacks.length,
+            total_users,
+            premium_users,
+            banned_users,
+            pending_payments,
+            total_recipes,
+            total_lifehacks,
           },
         });
+      }
+
+      case "top_recipes": {
+        const rows = await supabaseFetch("GET", "events", {
+          select: "payload",
+          event: "eq.open_recipe",
+          limit: 1000,
+        }).catch(() => []);
+        const counts = new Map<number, number>();
+        for (const r of rows ?? []) {
+          const id = Number(r?.payload?.recipe_id);
+          if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+        }
+        const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+        return res.status(200).json({ ok: true, data: top.map(([id, count]) => ({ id, count })) });
       }
 
       // =====================

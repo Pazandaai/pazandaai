@@ -17,6 +17,8 @@ import { cn } from "../lib/utils";
 import type { DifficultyKey, Recipe } from "../types";
 import type { Lifehack } from "../types/lifehack";
 
+import { getStartParam } from "../lib/deeplink";
+
 function getCategoryEmoji(cat: string): string {
   const v = toLat(cat).toLowerCase();
   if (v.includes("palov") || v.includes("quyuq") || v.includes("asosiy")) return "🍚";
@@ -62,6 +64,14 @@ export default function RecipesPage() {
     fetchLifehacks().then(setLifehacks).catch(() => {});
     fetch(`${API_BASE}/api/category-images`, { headers: tgHeaders() }).then((r) => r.json()).then((j) => { if (j?.ok && j.value) setCategoryImages(j.value); }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const sp = getStartParam();
+    if (!sp || recipes.length === 0) return;
+    const m = /^r(\d+)$/.exec(sp);
+    const target = m ? recipes.find((r) => r.id === Number(m[1])) : null;
+    if (target) setSelectedRecipe(target);
+  }, [recipes]);
 
   useEffect(() => {
     return registerBack(() => {

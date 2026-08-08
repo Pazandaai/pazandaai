@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -16,23 +17,21 @@ from app.texts.strings import t
 
 settings = get_settings()
 
-
 async def send_daily_recipe(bot) -> None:
     logging.info("Executing daily recipe task...")
 
-    recipe = await db.get_random_recipe()
+    recipes = await db.list_published_recipes()
+    if not recipes:
+        return
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     async for user in db.iter_users():
         user_id = user["telegram_id"]
         lang = user.get("language", "latn")
 
-        if not recipe:
-            msg = f"<b>{t(lang, 'daily_recipe_title')}</b>\n\n{t(lang, 'daily_recipe_fallback')}"
-            try:
-                await bot.send_message(user_id, msg)
-            except Exception:
-                pass
-            continue
+        idx = int(hashlib.sha256(f"{user_id}-{today}".encode()).hexdigest(), 16) % len(recipes)
+        recipe = recipes[idx]
 
         raw_title = t(lang, recipe["title"]) if lang == "kyr" else recipe["title"]
         raw_desc = t(lang, recipe["description"]) if recipe.get("description") and lang == "kyr" else recipe.get("description", "")

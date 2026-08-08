@@ -3,16 +3,18 @@ import {
   Copy,
   Heart,
   Plus,
+  Share2,
   Timer,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useApp } from "../../context/AppContext";
+import { track } from "../../lib/analytics";
 import {
   formatQuantity,
   scaleIngredient,
 } from "../../lib/recipe-utils";
-import { hapticImpact, hapticNotification } from "../../lib/telegram";
+import { hapticImpact, hapticNotification, tg } from "../../lib/telegram";
 import { cn } from "../../lib/utils";
 import type { Recipe } from "../../types";
 import ModalShell from "../ui/ModalShell";
@@ -30,6 +32,7 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
     addToShoppingList,
     favorites,
     format,
+    openModal,
     startTimer,
     t,
     toggleFavorite,
@@ -51,6 +54,10 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
       setPortion(recipe.servings);
     } else {
       setPortion(4);
+    }
+
+    if (recipe?.id) {
+      track("open_recipe", { recipe_id: recipe.id });
     }
   }, [recipe?.id]);
 
@@ -102,6 +109,7 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
       }));
 
     addToShoppingList(items);
+    track("add_shopping", { recipe_id: recipe.id, items_count: items.length });
     hapticNotification("success");
   };
 
@@ -125,10 +133,25 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      track("copy_recipe", { recipe_id: recipe.id });
       hapticNotification("success");
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // ignore
+    }
+  };
+
+  const share = () => {
+    if (!recipe) return;
+    const bot = import.meta.env.VITE_BOT_USERNAME || "pazanda_ai_bot";
+    const url = `https://t.me/${bot}?startapp=r${recipe.id}`;
+    track("share_recipe", { recipe_id: recipe.id });
+    try {
+      tg?.openTelegramLink?.(
+        `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(format(recipe.title))}`,
+      );
+    } catch {
+      navigator.clipboard?.writeText(url);
     }
   };
 
@@ -191,6 +214,14 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
             </button>
 
             <button
+              onClick={share}
+              className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm"
+              title="Share"
+            >
+              <Share2 size={16} className="text-slate-600" />
+            </button>
+
+            <button
               onClick={copyRecipe}
               className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm"
             >
@@ -198,6 +229,26 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
             </button>
           </div>
         </div>
+
+        {recipe.locked ? (
+          <div className="space-y-3 rounded-3xl bg-slate-900 p-5 text-center shadow-lg">
+            <div className="text-4xl">🔒</div>
+            <p className="text-sm font-extrabold text-white">{format("Premium retsept")}</p>
+            <p className="text-xs text-slate-300">
+              {format("To'liq retsept va tayyorlash bosqichlarini ko'rish uchun Premium obuna kerak.")}
+            </p>
+            <button
+              onClick={() => {
+                onClose();
+                openModal("premium");
+              }}
+              className="h-11 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white shadow-md active:scale-95 transition-transform"
+            >
+              💎 {format("Premium ochish (25 000 so'm)")}
+            </button>
+          </div>
+        ) : (
+          <>
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -301,6 +352,8 @@ export default function RecipeModal({ recipe, onClose }: RecipeModalProps) {
             ))}
           </div>
         </div>
+        </>
+        )}
       </div>
     </ModalShell>
   );

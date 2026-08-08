@@ -30,6 +30,7 @@ export interface RecipeStep {
 
 export interface Recipe {
   id: number;
+  slug?: string;
   category?: string;
   title: string;
   description?: string;
@@ -40,6 +41,8 @@ export interface Recipe {
   servings?: number;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
+  is_premium_only?: boolean;
+  locked?: boolean;
 }
 
 export interface ShoppingItem {

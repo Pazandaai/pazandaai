@@ -36,6 +36,15 @@ async function notifyAdmin(caption: string, photoUrl: string): Promise<void> {
   }
 }
 
+const uploadHits = new Map<number, number[]>();
+function quotaOk(userId: number): boolean {
+  const now = Date.now();
+  const arr = (uploadHits.get(userId) ?? []).filter((t) => now - t < 86_400_000);
+  arr.push(now);
+  uploadHits.set(userId, arr);
+  return arr.length <= 15;
+}
+
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse,
@@ -77,6 +86,10 @@ export default async function handler(
 
     if (!user) {
       return res.status(403).json({ ok: false, error: "Invalid initData" });
+    }
+
+    if (!quotaOk(user.id)) {
+      return res.status(429).json({ ok: false, error: "Kunlik limit tugadi (maksimum 15 rasm/kun)" });
     }
 
     const isAdmin = isAdminUser(user);

@@ -598,6 +598,7 @@ interface RecipeFormState {
   difficulty: string;
   servings: string;
   is_published: boolean;
+  is_premium_only: boolean;
   ingredients_text: string;
   steps_text: string;
 }
@@ -608,10 +609,11 @@ const emptyRecipeForm: RecipeFormState = {
   description: "",
   image_url: "",
   emoji: "",
-  cook_time_minutes: "",
+  cook_time_minutes: "30",
   difficulty: "oson",
   servings: "4",
   is_published: true,
+  is_premium_only: false,
   ingredients_text: "",
   steps_text: "",
 };
@@ -669,6 +671,7 @@ function RecipesAdmin() {
         difficulty: full.difficulty ?? "oson",
         servings: String(full.servings ?? "4"),
         is_published: Boolean(full.is_published),
+        is_premium_only: Boolean(full.is_premium_only),
         ingredients_text: ingredientsToLines(parseMaybeJson(full.ingredients)),
         steps_text: stepsToLines(parseMaybeJson(full.steps)),
       });
@@ -697,6 +700,7 @@ function RecipesAdmin() {
       difficulty: form.difficulty || null,
       servings: form.servings ? Number(form.servings) : 4,
       is_published: form.is_published,
+      is_premium_only: form.is_premium_only,
       ingredients,
       steps,
     };
@@ -863,6 +867,16 @@ function RecipesAdmin() {
               className="h-4 w-4 rounded border-slate-300 text-[#DB2777]"
             />
             <span className="text-xs font-bold text-slate-700">{format("Chop etilgan (foydalanuvchilarga ko'rinadi)")}</span>
+          </label>
+
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={form.is_premium_only}
+              onChange={(e) => setForm((p) => ({ ...p, is_premium_only: e.target.checked }))}
+              className="h-4 w-4 rounded border-slate-300 text-[#DB2777]"
+            />
+            <span className="text-xs font-bold text-amber-700">💎 {format("Faqat Premium (bepul foydalanuvchilarga qulflanadi)")}</span>
           </label>
 
           <button

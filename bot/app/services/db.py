@@ -386,6 +386,17 @@ class SupabaseDB:
 
         return random.choice(recipes)
 
+    async def list_published_recipes(self) -> list[dict[str, Any]]:
+        return await self._request(
+            "GET",
+            "recipes",
+            params={
+                "select": "id,title,description,image_url,cook_time_minutes,difficulty,category",
+                "is_published": "eq.true",
+                "limit": 500,
+            },
+        )
+
     # =========================
     # BACKUP
     # =========================

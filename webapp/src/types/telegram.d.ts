@@ -30,6 +30,7 @@ interface TelegramWebApp {
   close?: () => void;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
+  openTelegramLink?: (url: string) => void;
 
   BackButton?: {
     isVisible?: boolean;
