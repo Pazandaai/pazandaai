@@ -16,11 +16,36 @@ export default function BannerCarousel({ slides }: BannerCarouselProps) {
 
   useEffect(() => {
     if (count <= 1) return;
-    const id = setInterval(() => {
-      setIndex((prev) => (prev + 1) % count);
-    }, 5000);
-    return () => clearInterval(id);
+    let id: number | null = null;
+    const start = () => {
+      if (id == null) {
+        id = window.setInterval(() => setIndex((i) => (i + 1) % count), 5000);
+      }
+    };
+    const stop = () => {
+      if (id != null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    const onVis = () => (document.hidden ? stop() : start());
+    start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [count]);
+
+  // keyingi slayd rasmini oldindan yuklash (switch'da lag yo'qoladi)
+  useEffect(() => {
+    if (count <= 1) return;
+    const next = slides[(index + 1) % count];
+    if (next?.image_url) {
+      const img = new Image();
+      img.src = next.image_url;
+    }
+  }, [index, slides, count]);
 
   useEffect(() => {
     if (index >= count) setIndex(0);

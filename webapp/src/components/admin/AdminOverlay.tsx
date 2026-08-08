@@ -1365,90 +1365,171 @@ function ProductCatalogAdmin() {
 // =========================
 // BANNER ADMIN
 // =========================
+interface SlideDraft {
+  title: string;
+  badge: string;
+  image: string;
+  linkUrl: string;
+  linkText: string;
+}
+
+const emptySlide = (): SlideDraft => ({
+  title: "",
+  badge: "",
+  image: "",
+  linkUrl: "",
+  linkText: "",
+});
+
 function BannerAdmin() {
   const { format } = useApp();
-
-  const [title, setTitle] = useState("");
-  const [badge, setBadge] = useState("");
-  const [image, setImage] = useState("");
-  const [linkUrl, setLinkUrl] = useState("");
-  const [linkText, setLinkText] = useState("");
+  const [slides, setSlides] = useState<SlideDraft[]>([emptySlide()]);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     adminRequest("get_banner")
       .then((res) => {
         const b = res.data?.value;
-        if (b) {
-          setTitle(b.title ?? "");
-          setBadge(b.badge ?? b.subtitle ?? "");
-          setImage(b.image_url ?? b.image ?? "");
-          setLinkUrl(b.link_url ?? b.target_url ?? b.button_url ?? b.linkUrl ?? "");
-          setLinkText(b.link_text ?? b.button_text ?? b.linkText ?? "");
+        if (!b) return;
+        if (Array.isArray(b.slides) && b.slides.length > 0) {
+          setSlides(
+            b.slides.map((s: any) => ({
+              title: s.title ?? "",
+              badge: s.subtitle ?? s.badge ?? "",
+              image: s.image_url ?? s.image ?? "",
+              linkUrl: s.link_url ?? s.target_url ?? s.button_url ?? s.linkUrl ?? "",
+              linkText: s.link_text ?? s.button_text ?? s.linkText ?? "",
+            })),
+          );
+        } else if (b.title || b.image_url || b.image) {
+          setSlides([
+            {
+              title: b.title ?? "",
+              badge: b.subtitle ?? b.badge ?? "",
+              image: b.image_url ?? b.image ?? "",
+              linkUrl: b.link_url ?? b.target_url ?? b.button_url ?? b.linkUrl ?? "",
+              linkText: b.link_text ?? b.button_text ?? b.linkText ?? "",
+            },
+          ]);
         }
       })
       .catch(() => {});
   }, []);
 
+  const patch = (i: number, p: Partial<SlideDraft>) =>
+    setSlides((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...p } : s)));
+
   const save = async () => {
+    const clean = slides.filter((s) => s.title || s.image);
+    const first = clean[0] || emptySlide();
+
     await adminRequest("save_banner", {
       value: {
-        title,
-        badge,
-        image,
-        linkUrl,
-        linkText,
-        subtitle: badge,
-        image_url: image,
-        link_url: linkUrl,
-        target_url: linkUrl,
-        button_url: linkUrl,
-        link_text: linkText,
-        button_text: linkText,
         active: true,
+        title: first.title,
+        badge: first.badge,
+        subtitle: first.badge,
+        image: first.image,
+        image_url: first.image,
+        link_url: first.linkUrl,
+        link_text: first.linkText,
+        slides: clean.map((s, i) => ({
+          id: `slide-${i + 1}`,
+          title: s.title,
+          subtitle: s.badge,
+          image_url: s.image,
+          link_url: s.linkUrl,
+          link_text: s.linkText,
+          active: true,
+        })),
       },
     });
 
+    forget("home_banner");
     hapticNotification("success");
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
 
   return (
-    <div className="space-y-3 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
-      <p className="text-sm font-bold text-slate-900">{format("Bosh sahifa banneri")}</p>
-
-      <div>
-        <label className="text-xs font-bold text-slate-500">{format("Badge (masalan: TOP RETSEPT)")}</label>
-        <input value={badge} onChange={(e) => setBadge(e.target.value)} className={inputClass} />
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-extrabold text-slate-900">{format("Bosh sahifa karusel slaydlar")}</p>
+        <span className="text-xs font-bold text-slate-400">{slides.length} ta slayd</span>
       </div>
 
-      <div>
-        <label className="text-xs font-bold text-slate-500">{format("Sarlavha")}</label>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
-      </div>
+      {slides.map((s, i) => (
+        <div key={i} className="space-y-3 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-extrabold text-slate-700">🖼 Slayd {i + 1}</p>
+            {slides.length > 1 && (
+              <button
+                onClick={() => setSlides((p) => p.filter((_, idx) => idx !== i))}
+                className="rounded-xl bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-500 hover:bg-red-100"
+              >
+                🗑 O'chirish
+              </button>
+            )}
+          </div>
 
-      <div>
-        <label className="text-xs font-bold text-slate-500">{format("Rasm URL")}</label>
-        <ImageUploader value={image} onChange={setImage} />
-      </div>
+          <div>
+            <label className="text-[11px] font-bold text-slate-500">{format("Badge (masalan: TOP RETSEPT)")}</label>
+            <input
+              value={s.badge}
+              onChange={(e) => patch(i, { badge: e.target.value })}
+              placeholder="TOP RETSEPT"
+              className={inputClass}
+            />
+          </div>
 
-      <div>
-        <label className="text-xs font-bold text-slate-500">{format("Havola URL (Link: https://... yoki /recipes)")}</label>
-        <input
-          value={linkUrl}
-          onChange={(e) => setLinkUrl(e.target.value)}
-          placeholder="https://t.me/... yoki /recipes"
-          className={inputClass}
-        />
-      </div>
+          <div>
+            <label className="text-[11px] font-bold text-slate-500">{format("Sarlavha")}</label>
+            <input
+              value={s.title}
+              onChange={(e) => patch(i, { title: e.target.value })}
+              placeholder="O'zbek Milliy Taomlari"
+              className={inputClass}
+            />
+          </div>
 
-      <div>
-        <label className="text-xs font-bold text-slate-500">{format("Tugma matni (masalan: Batafsil)")}</label>
-        <input value={linkText} onChange={(e) => setLinkText(e.target.value)} className={inputClass} />
-      </div>
+          <div>
+            <label className="text-[11px] font-bold text-slate-500">{format("Rasm URL")}</label>
+            <ImageUploader value={s.image} onChange={(url) => patch(i, { image: url })} />
+          </div>
 
-      <button onClick={save} className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white">
+          <div>
+            <label className="text-[11px] font-bold text-slate-500">{format("Havola URL (https://... yoki /recipes)")}</label>
+            <input
+              value={s.linkUrl}
+              onChange={(e) => patch(i, { linkUrl: e.target.value })}
+              placeholder="https://t.me/... yoki /recipes"
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-slate-500">{format("Tugma matni (masalan: Batafsil)")}</label>
+            <input
+              value={s.linkText}
+              onChange={(e) => patch(i, { linkText: e.target.value })}
+              placeholder="Batafsil"
+              className={inputClass}
+            />
+          </div>
+        </div>
+      ))}
+
+      <button
+        onClick={() => setSlides((p) => [...p, emptySlide()])}
+        className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-900 text-xs font-bold text-white shadow-sm active:scale-95 transition-transform"
+      >
+        + {format("Slayd qo'shish")}
+      </button>
+
+      <button
+        onClick={save}
+        className="h-12 w-full rounded-2xl bg-[#DB2777] text-sm font-extrabold text-white shadow-md active:scale-95 transition-transform"
+      >
         {saved ? format("✅ Saqlandi") : format("Saqlash")}
       </button>
     </div>
